@@ -1,0 +1,82 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.0'
+    id 'io.spring.dependency-management' version '1.1.4'
+}
+
+group = 'com.payment'
+version = '1.0.0'
+sourceCompatibility = '17'
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+    // GitHub Packages - only if credentials are configured
+    def githubUsername = findProperty('github.username') ?: System.getenv('USERNAME_GITHUB')
+    def githubToken = findProperty('github.token') ?: System.getenv('TOKEN_GITHUB')
+
+    if (githubUsername && githubToken) {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/${findProperty('github.owner') ?: 'm2m2d0u'}/${findProperty('github.repo') ?: 'shared-libs-payments'}")
+            credentials {
+                username = githubUsername
+                password = githubToken
+            }
+        }
+    }
+}
+
+dependencies {
+    // Spring Boot Starters
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // Database
+    implementation 'org.postgresql:postgresql'
+    implementation 'org.flywaydb:flyway-core'
+
+    // Kafka
+    implementation 'org.springframework.kafka:spring-kafka'
+
+    // Redis (for caching commission rules)
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+    // Shared libraries
+    implementation 'com.payment:payment-common-lib:1.0.9'
+    implementation 'com.payment:payment-security-lib:1.0.9'
+    implementation 'com.payment:payment-kafka-lib:1.0.9'
+
+    // JSON handling for JSONB
+    implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'
+
+    // Utilities
+    implementation 'org.mapstruct:mapstruct:1.5.5.Final'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
+
+    // API Documentation
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.testcontainers:postgresql:1.19.3'
+    testImplementation 'org.testcontainers:kafka:1.19.3'
+    testImplementation 'org.springframework.kafka:spring-kafka-test'
+    testImplementation 'io.rest-assured:rest-assured:5.3.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
