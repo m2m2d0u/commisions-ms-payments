@@ -1,5 +1,11 @@
 package com.payment.commission.config;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
@@ -33,6 +39,9 @@ public class RedisConfig {
     @Value("${spring.data.redis.password:}")
     private String redisPassword;
 
+    // Single instance of Redis ObjectMapper to ensure consistency
+    private final ObjectMapper redisObjectMapper = createRedisObjectMapper();
+
     @Bean
     public LettuceConnectionFactory redisConnectionFactory() {
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(redisHost, redisPort);
@@ -45,14 +54,40 @@ public class RedisConfig {
         return new LettuceConnectionFactory(config);
     }
 
+    /**
+     * Create ObjectMapper with type information enabled for Redis only
+     * This ensures Long values are properly deserialized (not cast to Integer)
+     * and Java 8 date/time types are properly handled
+     *
+     * NOTE: This is a private method, not a @Bean, to avoid interfering with HTTP JSON processing
+     */
+    private ObjectMapper createRedisObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+
+        // Register JavaTimeModule for Java 8 date/time support (Instant, LocalDateTime, etc.)
+        mapper.registerModule(new JavaTimeModule());
+
+        // Disable writing dates as timestamps (write as ISO-8601 strings instead)
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+        // Enable type information to preserve Java types during serialization/deserialization
+        PolymorphicTypeValidator typeValidator = BasicPolymorphicTypeValidator.builder()
+                .allowIfBaseType(Object.class)
+                .build();
+
+        mapper.activateDefaultTyping(typeValidator, ObjectMapper.DefaultTyping.NON_FINAL, JsonTypeInfo.As.PROPERTY);
+
+        return mapper;
+    }
+
     @Bean
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
         template.setKeySerializer(new StringRedisSerializer());
-        template.setValueSerializer(new GenericJackson2JsonRedisSerializer());
+        template.setValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
         template.setHashKeySerializer(new StringRedisSerializer());
-        template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer());
+        template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper));
         return template;
     }
 
@@ -62,7 +97,7 @@ public class RedisConfig {
                 .entryTtl(Duration.ofHours(1)) // Cache TTL: 1 hour
                 .serializeValuesWith(
                         RedisSerializationContext.SerializationPair.fromSerializer(
-                                new GenericJackson2JsonRedisSerializer()
+                                new GenericJackson2JsonRedisSerializer(redisObjectMapper)
                         )
                 );
 

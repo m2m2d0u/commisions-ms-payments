@@ -36,45 +36,38 @@ public class CommissionServiceImpl implements CommissionService {
     @Override
     @Transactional(readOnly = true)
     public FeeCalculationResponse calculateFee(CalculateFeeRequest request) {
-        log.info("Calculating fee for request: {}", request);
+        log.info("Calculating fee for request with ruleId: {}", request.getRuleId());
 
-        Long feeAmount = feeCalculationEngine.calculateFee(
-                request.getAmount(),
-                request.getCurrency(),
-                request.getTransferType(),
-                request.getKycLevel()
+        // Get the specified commission rule
+        CommissionRule rule = feeCalculationEngine.getRuleById(request.getRuleId());
+
+        // Calculate fee using the specified rule
+        Long feeAmount = feeCalculationEngine.calculateFeeByRuleId(
+                request.getRuleId(),
+                request.getAmount()
         );
 
-        CommissionRule matchingRule = feeCalculationEngine.findMatchingRule(
-                request.getAmount(),
-                request.getCurrency(),
-                request.getTransferType(),
-                request.getKycLevel()
-        );
-
-        // Build calculation details
+        // Build calculation details with rule information
         Map<String, Object> calculationDetails = new HashMap<>();
-        if (matchingRule != null) {
-            calculationDetails.put("ruleId", matchingRule.getRuleId());
-            calculationDetails.put("transferType", request.getTransferType());
-            calculationDetails.put("percentageFee", matchingRule.getPercentage());
-            calculationDetails.put("fixedAmount", matchingRule.getFixedAmount());
-            calculationDetails.put("minAmount", matchingRule.getMinAmount());
-            calculationDetails.put("maxAmount", matchingRule.getMaxAmount());
-            calculationDetails.put("finalAmount", feeAmount);
-        } else {
-            // BCEAO default rule applied
-            calculationDetails.put("reason", "BCEAO_DEFAULT");
-            if (request.getAmount() <= 5000L) {
-                calculationDetails.put("message", messageService.getMessage("message.bceao.free.transaction"));
-            }
-        }
+        calculationDetails.put("ruleId", rule.getRuleId());
+        calculationDetails.put("transferType", rule.getTransferType());
+        calculationDetails.put("percentage", rule.getPercentage());
+        calculationDetails.put("fixedAmount", rule.getFixedAmount());
+        calculationDetails.put("minAmount", rule.getMinAmount());
+        calculationDetails.put("maxAmount", rule.getMaxAmount());
+        calculationDetails.put("priority", rule.getPriority());
+        calculationDetails.put("kycLevel", rule.getKycLevel());
+        calculationDetails.put("finalAmount", feeAmount);
+        calculationDetails.put("ruleDescription", rule.getDescription());
+        calculationDetails.put("requestedAmount", request.getAmount());
+        calculationDetails.put("requestedCurrency", request.getCurrency());
+        calculationDetails.put("requestedTransferType", request.getTransferType());
 
         return FeeCalculationResponse.builder()
                 .amount(request.getAmount())
                 .currency(request.getCurrency())
                 .commissionAmount(feeAmount)
-                .ruleId(matchingRule != null ? matchingRule.getRuleId() : null)
+                .ruleId(rule.getRuleId())
                 .transferType(request.getTransferType())
                 .calculationDetails(calculationDetails)
                 .build();

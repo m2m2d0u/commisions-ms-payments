@@ -21,8 +21,8 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
-        use_sql_comments: true
+        format_sql: false
+        use_sql_comments: false
 
   flyway:
     enabled: true
@@ -32,7 +32,7 @@ spring:
 
   kafka:
     enabled: true
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: localhost:9093
     producer:
       acks: all
       retries: 3

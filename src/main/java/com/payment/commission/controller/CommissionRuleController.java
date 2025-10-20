@@ -4,6 +4,7 @@ import com.payment.commission.dto.request.CreateRuleRequest;
 import com.payment.commission.dto.request.UpdateRuleRequest;
 import com.payment.commission.dto.response.CommissionRuleResponse;
 import com.payment.commission.service.CommissionRuleService;
+import com.payment.common.enums.Currency;
 import com.payment.common.i18n.MessageService;
 import com.payment.common.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -106,6 +108,38 @@ public class CommissionRuleController {
 
         return ResponseEntity.ok(
             ApiResponse.success(messageService.getMessage("success.rules.retrieved"), data)
+        );
+    }
+
+    /**
+     * Get commission rules by currency
+     */
+    @GetMapping("/currency/{currency}")
+    @Operation(summary = "Get rules by currency", description = "Get all commission rules for a specific currency")
+    public ResponseEntity<ApiResponse<List<CommissionRuleResponse>>> getRulesByCurrency(
+            @PathVariable Currency currency) {
+        log.info("Fetching commission rules for currency: {}", currency);
+
+        List<CommissionRuleResponse> rules = commissionRuleService.getRulesByCurrency(currency);
+
+        return ResponseEntity.ok(
+            ApiResponse.success(messageService.getMessage("success.rules.retrieved"), rules)
+        );
+    }
+
+    /**
+     * Get active commission rules by currency
+     */
+    @GetMapping("/currency/{currency}/active")
+    @Operation(summary = "Get active rules by currency", description = "Get active commission rules for a specific currency")
+    public ResponseEntity<ApiResponse<List<CommissionRuleResponse>>> getActiveRulesByCurrency(
+            @PathVariable Currency currency) {
+        log.info("Fetching active commission rules for currency: {}", currency);
+
+        List<CommissionRuleResponse> rules = commissionRuleService.getActiveRulesByCurrency(currency);
+
+        return ResponseEntity.ok(
+            ApiResponse.success(messageService.getMessage("success.rules.retrieved"), rules)
         );
     }
 

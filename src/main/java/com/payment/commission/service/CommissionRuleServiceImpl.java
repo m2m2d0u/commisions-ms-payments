@@ -128,6 +128,25 @@ public class CommissionRuleServiceImpl implements CommissionRuleService {
                 .map(commissionRuleMapper::toResponse);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.List<CommissionRuleResponse> getRulesByCurrency(com.payment.common.enums.Currency currency) {
+        log.info("Fetching commission rules for currency: {}", currency);
+        return commissionRuleRepository.findByCurrency(currency)
+                .stream()
+                .map(commissionRuleMapper::toResponse)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.List<CommissionRuleResponse> getActiveRulesByCurrency(com.payment.common.enums.Currency currency) {
+        log.info("Fetching active commission rules for currency: {}", currency);
+        return commissionRuleRepository.findActiveRulesByCurrency(currency)
+                .stream()
+                .map(commissionRuleMapper::toResponse)
+                .collect(java.util.stream.Collectors.toList());
+    }
 
     @Override
     @CacheEvict(value = "commission-calculation", allEntries = true)

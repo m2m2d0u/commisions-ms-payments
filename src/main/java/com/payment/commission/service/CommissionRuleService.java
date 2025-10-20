@@ -3,9 +3,11 @@ package com.payment.commission.service;
 import com.payment.commission.dto.request.CreateRuleRequest;
 import com.payment.commission.dto.request.UpdateRuleRequest;
 import com.payment.commission.dto.response.CommissionRuleResponse;
+import com.payment.common.enums.Currency;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -33,6 +35,16 @@ public interface CommissionRuleService {
      * Get all commission rules (paginated)
      */
     Page<CommissionRuleResponse> getAllRules(Pageable pageable);
+
+    /**
+     * Get commission rules by currency
+     */
+    List<CommissionRuleResponse> getRulesByCurrency(Currency currency);
+
+    /**
+     * Get active commission rules by currency
+     */
+    List<CommissionRuleResponse> getActiveRulesByCurrency(Currency currency);
 
     /**
      * Deactivate a commission rule

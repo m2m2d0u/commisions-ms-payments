@@ -1,6 +1,7 @@
 package com.payment.commission.service;
 
 import com.payment.commission.domain.entity.CommissionRule;
+import com.payment.commission.exception.RuleNotFoundException;
 import com.payment.common.enums.Currency;
 import com.payment.common.enums.KYCLevel;
 import com.payment.commission.domain.enums.TransferType;
@@ -14,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.payment.common.i18n.MessageService;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Fee Calculation Engine
@@ -60,15 +62,78 @@ public class FeeCalculationEngine {
     }
 
     /**
-     * Calculate fee using custom commission rules
+     * Calculate fee using a specific commission rule by ID
+     * @param ruleId The UUID of the commission rule to use
+     * @param amount The transaction amount
+     * @return The calculated fee amount
      */
-    @Cacheable(value = "commission-calculation", key = "#amount + '-' + #currency + '-' + #transferType")
+    public Long calculateFeeByRuleId(UUID ruleId, Long amount) {
+        log.info("Calculating fee using rule ID: {} for amount: {}", ruleId, amount);
+
+        // Get the specific rule by ID
+        CommissionRule rule = commissionRuleRepository.findById(ruleId)
+                .orElseThrow(() -> new RuleNotFoundException(
+                        messageService.getMessage("error.rule.not.found") + ": " + ruleId
+                ));
+
+        // Check if rule is active
+        if (!rule.getIsActive()) {
+            throw new RuleNotFoundException(
+                    messageService.getMessage("error.rule.not.active") + ": " + ruleId
+            );
+        }
+
+        // Check if rule is currently effective (within date range)
+        if (!rule.isEffective()) {
+            throw new RuleNotFoundException(
+                    messageService.getMessage("error.rule.not.effective") + ": " + ruleId
+            );
+        }
+
+        // Verify transaction amount is within min/max amount limits
+        if (rule.getMinAmount() != null && amount < rule.getMinAmount()) {
+            log.warn("Transaction amount {} is below minimum {} for rule {}", amount, rule.getMinAmount(), ruleId);
+            throw new NoMatchingRuleException(
+                    messageService.getMessage("error.amount.below.minimum") +
+                    " (Min: " + rule.getMinAmount() + " " + rule.getCurrency() + ")"
+            );
+        }
+
+        if (rule.getMaxAmount() != null && amount > rule.getMaxAmount()) {
+            log.warn("Transaction amount {} exceeds maximum {} for rule {}", amount, rule.getMaxAmount(), ruleId);
+            throw new NoMatchingRuleException(
+                    messageService.getMessage("error.amount.above.maximum") +
+                    " (Max: " + rule.getMaxAmount() + " " + rule.getCurrency() + ")"
+            );
+        }
+
+        // Calculate fee using the rule
+        Long fee = rule.calculateFee(amount);
+        log.info("Fee calculated using rule {}: {} {}", rule.getRuleId(), fee, rule.getCurrency());
+
+        return fee;
+    }
+
+    /**
+     * Get commission rule by ID
+     */
+    public CommissionRule getRuleById(UUID ruleId) {
+        return commissionRuleRepository.findById(ruleId)
+                .orElseThrow(() -> new RuleNotFoundException(
+                        messageService.getMessage("error.rule.not.found") + ": " + ruleId
+                ));
+    }
+
+    /**
+     * @deprecated Use calculateFeeByRuleId instead - rules are now mandatory via ruleId
+     */
+    @Deprecated
     public Long calculateFee(Long amount, Currency currency,
                              TransferType transferType, KYCLevel kycLevel) {
+        log.warn("DEPRECATED: calculateFee without ruleId is deprecated. Use calculateFeeByRuleId instead.");
         log.info("Calculating fee: amount={}, currency={}, type={}, kycLevel={}",
                 amount, currency, transferType, kycLevel);
 
-        // Get active rules for this currency and transfer type, ordered by priority
         List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByCurrencyAndType(
                 currency, transferType
         );
@@ -79,7 +144,6 @@ public class FeeCalculationEngine {
             return calculateBCEAOFee(amount);
         }
 
-        // Find first matching rule
         CommissionRule matchingRule = rules.stream()
                 .filter(rule -> rule.matches(amount, transferType, kycLevel))
                 .findFirst()
@@ -95,7 +159,9 @@ public class FeeCalculationEngine {
 
     /**
      * Get matching rule for transaction
+     * @deprecated Use getRuleById with explicit ruleId instead
      */
+    @Deprecated
     public CommissionRule findMatchingRule(Long amount, Currency currency,
                                            TransferType transferType, KYCLevel kycLevel) {
         List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByCurrencyAndType(

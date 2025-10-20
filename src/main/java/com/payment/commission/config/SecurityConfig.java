@@ -25,6 +25,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/v1/commissions/calculate",
                                 "/api/v1/commissions/bceao-fee/**",
+                                "/api/v1/**",
                                 "/actuator/health",
                                 "/actuator/info",
                                 "/v3/api-docs/**",
