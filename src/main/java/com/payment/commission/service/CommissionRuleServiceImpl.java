@@ -15,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.payment.common.i18n.MessageService;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -35,13 +36,12 @@ public class CommissionRuleServiceImpl implements CommissionRuleService {
     @Override
     @CacheEvict(value = "commission-calculation", allEntries = true)
     public CommissionRuleResponse createRule(CreateRuleRequest request, UUID createdBy) {
-        log.info("Creating commission rule for provider: {}", request.getProviderId());
+        log.info("Creating commission rule");
 
         // Validate rule
         validateRule(request);
 
         CommissionRule rule = CommissionRule.builder()
-                .providerId(request.getProviderId())
                 .currency(request.getCurrency())
                 .transferType(request.getTransferType())
                 .minTransaction(request.getMinTransaction())
@@ -128,12 +128,6 @@ public class CommissionRuleServiceImpl implements CommissionRuleService {
                 .map(commissionRuleMapper::toResponse);
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public Page<CommissionRuleResponse> getRulesByProvider(UUID providerId, Pageable pageable) {
-        return commissionRuleRepository.findAll(pageable)
-                .map(commissionRuleMapper::toResponse);
-    }
 
     @Override
     @CacheEvict(value = "commission-calculation", allEntries = true)

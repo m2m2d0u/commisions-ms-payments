@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.payment.common.i18n.MessageService;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -38,19 +39,17 @@ public class CommissionServiceImpl implements CommissionService {
         log.info("Calculating fee for request: {}", request);
 
         Long feeAmount = feeCalculationEngine.calculateFee(
-            request.getAmount(),
-            request.getCurrency(),
-            request.getProviderId(),
-            request.getTransferType(),
-            request.getKycLevel()
+                request.getAmount(),
+                request.getCurrency(),
+                request.getTransferType(),
+                request.getKycLevel()
         );
 
         CommissionRule matchingRule = feeCalculationEngine.findMatchingRule(
-            request.getAmount(),
-            request.getCurrency(),
-            request.getProviderId(),
-            request.getTransferType(),
-            request.getKycLevel()
+                request.getAmount(),
+                request.getCurrency(),
+                request.getTransferType(),
+                request.getKycLevel()
         );
 
         // Build calculation details
@@ -83,20 +82,19 @@ public class CommissionServiceImpl implements CommissionService {
 
     @Override
     @Transactional(readOnly = true)
-    public Long calculateFee(Long amount, Currency currency, UUID providerId,
-                            TransferType transferType, KYCLevel kycLevel) {
-        return feeCalculationEngine.calculateFee(amount, currency, providerId, transferType, kycLevel);
+    public Long calculateFee(Long amount, Currency currency,
+                             TransferType transferType, KYCLevel kycLevel) {
+        return feeCalculationEngine.calculateFee(amount, currency, transferType, kycLevel);
     }
 
     @Override
-    public void recordCommission(UUID transactionId, UUID ruleId, UUID providerId,
-                                Long amount, Currency currency, String calculationBasis) {
+    public void recordCommission(UUID transactionId, UUID ruleId,
+                                 Long amount, Currency currency, String calculationBasis) {
         log.info("Recording commission: transaction={}, amount={} {}", transactionId, amount, currency);
 
         CommissionTransaction commission = CommissionTransaction.builder()
                 .transactionId(transactionId)
                 .ruleId(ruleId)
-                .providerId(providerId)
                 .amount(amount)
                 .currency(currency)
                 .calculationBasis(calculationBasis)

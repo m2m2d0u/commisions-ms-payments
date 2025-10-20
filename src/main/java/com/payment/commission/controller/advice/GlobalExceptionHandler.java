@@ -3,7 +3,7 @@ package com.payment.commission.controller.advice;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.payment.commission.exception.*;
-import com.payment.commission.service.MessageService;
+import com.payment.common.i18n.MessageService;
 import com.payment.common.dto.ErrorResponse;
 import com.payment.common.dto.ValidationError;
 import jakarta.servlet.http.HttpServletRequest;

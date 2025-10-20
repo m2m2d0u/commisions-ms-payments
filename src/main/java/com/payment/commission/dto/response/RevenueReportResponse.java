@@ -41,8 +41,7 @@ public class RevenueReportResponse {
     @AllArgsConstructor
     @Builder
     public static class RevenueBreakdown {
-        private String providerId;
-        private String providerName;
+        private Currency currency;
         private Long revenue;
         private Long transactionCount;
         private Long averageCommission;

@@ -1,13 +1,14 @@
 package com.payment.commission.service;
 
 import com.payment.commission.domain.entity.CommissionTransaction;
-import com.payment.commission.event.CommissionCollectedEvent;
-import com.payment.commission.event.CommissionRefundedEvent;
-import com.payment.commission.event.CommissionSettledEvent;
+import com.payment.kafka.event.CommissionEvent;
+import com.payment.kafka.config.KafkaTopics;
+import com.payment.kafka.publisher.EventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
 
 /**
  * Service for publishing commission-related events to Kafka
@@ -17,25 +18,24 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class CommissionEventPublisher {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final EventPublisher eventPublisher;
 
-    private static final String COMMISSION_EVENTS_TOPIC = "commission-events";
 
     /**
      * Publish commission collected event
      */
     public void publishCommissionCollected(CommissionTransaction commission) {
         try {
-            CommissionCollectedEvent event = CommissionCollectedEvent.create(
-                    commission.getCommissionId(),
-                    commission.getTransactionId(),
-                    commission.getProviderId(),
+            CommissionEvent event = CommissionEvent.commissionCollected(
+                    commission.getCommissionId().toString(),
+                    commission.getTransactionId().toString(),
                     commission.getAmount(),
                     commission.getCurrency().name(),
-                    commission.getCalculationBasis()
+                    commission.getCalculationBasis(),
+                    LocalDateTime.now()
             );
 
-            kafkaTemplate.send(COMMISSION_EVENTS_TOPIC, event);
+            eventPublisher.publish(KafkaTopics.COMMISSION_COLLECTED, commission.getCommissionId().toString(), event);
             log.info("Published COMMISSION_COLLECTED event for commission: {}", commission.getCommissionId());
         } catch (Exception e) {
             log.error("Error publishing COMMISSION_COLLECTED event", e);
@@ -47,15 +47,15 @@ public class CommissionEventPublisher {
      */
     public void publishCommissionRefunded(CommissionTransaction commission) {
         try {
-            CommissionRefundedEvent event = CommissionRefundedEvent.create(
-                    commission.getCommissionId(),
-                    commission.getTransactionId(),
-                    commission.getProviderId(),
+            CommissionEvent event = CommissionEvent.commissionRefunded(
+                    commission.getCommissionId().toString(),
+                    commission.getTransactionId().toString(),
                     commission.getAmount(),
-                    commission.getCurrency().name()
+                    commission.getCurrency().name(),
+                    LocalDateTime.now()
             );
 
-            kafkaTemplate.send(COMMISSION_EVENTS_TOPIC, event);
+            eventPublisher.publish(KafkaTopics.COMMISSION_REFUNDED, commission.getCommissionId().toString(), event);
             log.info("Published COMMISSION_REFUNDED event for commission: {}", commission.getCommissionId());
         } catch (Exception e) {
             log.error("Error publishing COMMISSION_REFUNDED event", e);
@@ -67,16 +67,16 @@ public class CommissionEventPublisher {
      */
     public void publishCommissionSettled(CommissionTransaction commission) {
         try {
-            CommissionSettledEvent event = CommissionSettledEvent.create(
-                    commission.getCommissionId(),
-                    commission.getTransactionId(),
-                    commission.getProviderId(),
+            CommissionEvent event = CommissionEvent.commissionSettled(
+                    commission.getCommissionId().toString(),
+                    commission.getTransactionId().toString(),
                     commission.getAmount(),
                     commission.getCurrency().name(),
-                    commission.getSettlementDate()
+                    commission.getSettlementDate(),
+                    LocalDateTime.now()
             );
 
-            kafkaTemplate.send(COMMISSION_EVENTS_TOPIC, event);
+            eventPublisher.publish(KafkaTopics.COMMISSION_SETTLED, commission.getCommissionId().toString(), event);
             log.info("Published COMMISSION_SETTLED event for commission: {}", commission.getCommissionId());
         } catch (Exception e) {
             log.error("Error publishing COMMISSION_SETTLED event", e);

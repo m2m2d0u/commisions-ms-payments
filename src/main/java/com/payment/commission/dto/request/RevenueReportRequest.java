@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 import java.time.LocalDate;
-import java.util.UUID;
 
 /**
  * Request DTO for revenue report
@@ -17,8 +16,6 @@ import java.util.UUID;
 @Builder
 public class RevenueReportRequest {
 
-    private UUID providerId;
-
     private Currency currency;
 
     @NotNull(message = "{validation.start.date.required}")
@@ -27,5 +24,5 @@ public class RevenueReportRequest {
     @NotNull(message = "{validation.end.date.required}")
     private LocalDate endDate;
 
-    private String groupBy; // PROVIDER, CURRENCY, DAY, MONTH
+    private String groupBy; // CURRENCY, DAY, MONTH
 }

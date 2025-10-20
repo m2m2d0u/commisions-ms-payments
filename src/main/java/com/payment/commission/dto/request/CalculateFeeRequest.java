@@ -7,8 +7,6 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
-import java.util.UUID;
-
 /**
  * Request DTO for calculating transaction fees
  */
@@ -25,9 +23,6 @@ public class CalculateFeeRequest {
 
     @NotNull(message = "{validation.currency.required}")
     private Currency currency;
-
-    @NotNull(message = "{validation.provider.required}")
-    private UUID providerId;
 
     @NotNull(message = "{validation.transfer.type.required}")
     private TransferType transferType;

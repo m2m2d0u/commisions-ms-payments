@@ -4,7 +4,7 @@ import com.payment.commission.dto.request.CreateRuleRequest;
 import com.payment.commission.dto.request.UpdateRuleRequest;
 import com.payment.commission.dto.response.CommissionRuleResponse;
 import com.payment.commission.service.CommissionRuleService;
-import com.payment.commission.service.MessageService;
+import com.payment.common.i18n.MessageService;
 import com.payment.common.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -43,7 +43,7 @@ public class CommissionRuleController {
     public ResponseEntity<ApiResponse<CommissionRuleResponse>> createRule(
             @Valid @RequestBody CreateRuleRequest request,
             @RequestHeader(value = "X-User-ID", required = false) UUID userId) {
-        log.info("Creating commission rule for provider: {}", request.getProviderId());
+        log.info("Creating commission rule");
 
         CommissionRuleResponse response = commissionRuleService.createRule(request, userId);
 
@@ -88,21 +88,14 @@ public class CommissionRuleController {
      * Get all commission rules (paginated)
      */
     @GetMapping
-    @Operation(summary = "Get all commission rules", description = "Get all commission rules with pagination and filtering")
+    @Operation(summary = "Get all commission rules", description = "Get all commission rules with pagination")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getAllRules(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) UUID providerId) {
+            @RequestParam(defaultValue = "20") int size) {
         log.info("Fetching commission rules - page: {}, size: {}", page, size);
 
         Pageable pageable = PageRequest.of(page, size);
-        Page<CommissionRuleResponse> rules;
-
-        if (providerId != null) {
-            rules = commissionRuleService.getRulesByProvider(providerId, pageable);
-        } else {
-            rules = commissionRuleService.getAllRules(pageable);
-        }
+        Page<CommissionRuleResponse> rules = commissionRuleService.getAllRules(pageable);
 
         Map<String, Object> data = new HashMap<>();
         data.put("content", rules.getContent());

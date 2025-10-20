@@ -20,8 +20,6 @@ import java.util.UUID;
 public class CommissionRuleResponse {
 
     private UUID ruleId;
-    private UUID providerId;
-    private String providerName;
     private Currency currency;
     private TransferType transferType;
     private Long minTransaction;

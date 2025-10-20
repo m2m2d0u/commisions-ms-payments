@@ -8,7 +8,6 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 /**
  * Request DTO for creating a commission rule
@@ -19,9 +18,6 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class CreateRuleRequest {
-
-    @NotNull(message = "{validation.provider.required}")
-    private UUID providerId;
 
     @NotNull(message = "{validation.currency.required}")
     private Currency currency;

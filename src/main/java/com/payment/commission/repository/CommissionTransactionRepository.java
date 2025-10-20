@@ -25,14 +25,9 @@ public interface CommissionTransactionRepository extends JpaRepository<Commissio
     Optional<CommissionTransaction> findByTransactionId(UUID transactionId);
 
     /**
-     * Find all commissions for a provider
+     * Find commissions by currency
      */
-    List<CommissionTransaction> findByProviderId(UUID providerId);
-
-    /**
-     * Find commissions by provider and currency
-     */
-    List<CommissionTransaction> findByProviderIdAndCurrency(UUID providerId, Currency currency);
+    List<CommissionTransaction> findByCurrency(Currency currency);
 
     /**
      * Find commissions by status
@@ -45,19 +40,12 @@ public interface CommissionTransactionRepository extends JpaRepository<Commissio
     List<CommissionTransaction> findBySettledFalse();
 
     /**
-     * Find unsettled commissions for a provider
-     */
-    List<CommissionTransaction> findByProviderIdAndSettledFalse(UUID providerId);
-
-    /**
-     * Calculate total revenue for a provider within a date range
+     * Calculate total revenue within a date range
      */
     @Query("SELECT SUM(ct.amount) FROM CommissionTransaction ct " +
-           "WHERE ct.providerId = :providerId " +
-           "AND ct.status = 'COMPLETED' " +
+           "WHERE ct.status = 'COMPLETED' " +
            "AND ct.createdAt BETWEEN :startDate AND :endDate")
-    Long calculateTotalRevenueByProviderAndDateRange(
-            @Param("providerId") UUID providerId,
+    Long calculateTotalRevenueByDateRange(
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate
     );
@@ -76,14 +64,12 @@ public interface CommissionTransactionRepository extends JpaRepository<Commissio
     );
 
     /**
-     * Count transactions for a provider within a date range
+     * Count transactions within a date range
      */
     @Query("SELECT COUNT(ct) FROM CommissionTransaction ct " +
-           "WHERE ct.providerId = :providerId " +
-           "AND ct.status = 'COMPLETED' " +
+           "WHERE ct.status = 'COMPLETED' " +
            "AND ct.createdAt BETWEEN :startDate AND :endDate")
-    Long countTransactionsByProviderAndDateRange(
-            @Param("providerId") UUID providerId,
+    Long countTransactionsByDateRange(
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate
     );
@@ -92,17 +78,4 @@ public interface CommissionTransactionRepository extends JpaRepository<Commissio
      * Find commissions created within a date range
      */
     List<CommissionTransaction> findByCreatedAtBetween(LocalDateTime startDate, LocalDateTime endDate);
-
-    /**
-     * Find commissions by provider and date range
-     */
-    @Query("SELECT ct FROM CommissionTransaction ct " +
-           "WHERE ct.providerId = :providerId " +
-           "AND ct.createdAt BETWEEN :startDate AND :endDate " +
-           "ORDER BY ct.createdAt DESC")
-    List<CommissionTransaction> findByProviderIdAndDateRange(
-            @Param("providerId") UUID providerId,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
-    );
 }

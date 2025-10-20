@@ -14,6 +14,5 @@ public interface CommissionRuleMapper {
     /**
      * Convert CommissionRule entity to CommissionRuleResponse DTO
      */
-    @Mapping(target = "providerName", ignore = true)
     CommissionRuleResponse toResponse(CommissionRule rule);
 }

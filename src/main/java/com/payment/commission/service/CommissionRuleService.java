@@ -35,11 +35,6 @@ public interface CommissionRuleService {
     Page<CommissionRuleResponse> getAllRules(Pageable pageable);
 
     /**
-     * Get rules by provider
-     */
-    Page<CommissionRuleResponse> getRulesByProvider(UUID providerId, Pageable pageable);
-
-    /**
      * Deactivate a commission rule
      */
     void deactivateRule(UUID ruleId);

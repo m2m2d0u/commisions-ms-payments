@@ -6,7 +6,7 @@
 **Framework**: Spring Boot 3.2.0
 **Build Tool**: Gradle 8.5+
 **Purpose**: Transaction fee calculation, commission rule management, revenue tracking, and settlement
-**Last Updated**: 2025-10-19
+**Last Updated**: 2025-10-20
 
 ---
 
@@ -37,10 +37,10 @@ The **Commission Service** is responsible for calculating and tracking all trans
 ### Core Responsibilities
 
 - ✅ **Fee Calculation** - Calculate transaction fees based on BCEAO rules
-- ✅ **Commission Rules Management** - Manage fee rules per provider and transfer type
+- ✅ **Commission Rules Management** - Manage fee rules as a centralized wallet by currency and transfer type
 - ✅ **Revenue Tracking** - Track platform commission revenue per transaction
-- ✅ **Settlement Management** - Track settlement status with providers
-- ✅ **Revenue Reporting** - Generate revenue reports by provider, period, currency
+- ✅ **Settlement Management** - Track settlement status
+- ✅ **Revenue Reporting** - Generate revenue reports by period and currency
 - ✅ **Rule Versioning** - Support time-based rule activation/expiration
 - ✅ **Multi-Currency Support** - Handle XOF and XAF commissions
 
@@ -57,7 +57,7 @@ The **Commission Service** is responsible for calculating and tracking all trans
    - **INTERNATIONAL**: Cross-country transfers
 
 3. **Rule Priority System**:
-   - Multiple rules can exist for the same provider
+   - Multiple rules can exist for the same currency and transfer type
    - Higher priority rules are evaluated first
    - First matching rule is applied
 
@@ -69,7 +69,7 @@ The **Commission Service** is responsible for calculating and tracking all trans
 
 5. **Settlement Tracking**:
    - Commissions marked as PENDING/COMPLETED
-   - Track settlement with providers
+   - Track settlement status
    - Generate settlement reports
 
 ---
@@ -334,13 +334,12 @@ The Commission Service uses two main tables in the `commission_db` database:
 
 #### 1. commission_rules
 
-Stores commission calculation rules per wallet provider and currency.
+Stores commission calculation rules as a centralized wallet by currency and transfer type.
 
 ```sql
 CREATE TABLE commission_rules (
     rule_id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    provider_id         UUID NOT NULL REFERENCES wallet_providers(provider_id) ON DELETE CASCADE,
-    currency            VARCHAR(3) NOT NULL REFERENCES currencies(currency_code),
+    currency            VARCHAR(3) NOT NULL,
 
     -- Rule conditions
     transfer_type       VARCHAR(20) NOT NULL CHECK (transfer_type IN ('SAME_WALLET', 'CROSS_WALLET', 'INTERNATIONAL')),
@@ -365,19 +364,18 @@ CREATE TABLE commission_rules (
     notes               TEXT,
     created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    created_by          UUID REFERENCES users(user_id),
+    created_by          UUID,
 
-    -- Constraint: One active rule per provider per currency per type per priority
-    UNIQUE(provider_id, currency, transfer_type, priority, effective_from)
+    -- Constraint: One active rule per currency per type per priority
+    UNIQUE(currency, transfer_type, priority, effective_from)
 );
 
 -- Indexes
-CREATE INDEX idx_commission_rules_provider ON commission_rules(provider_id, is_active);
 CREATE INDEX idx_commission_rules_currency ON commission_rules(currency);
-CREATE INDEX idx_commission_rules_provider_currency ON commission_rules(provider_id, currency, is_active);
+CREATE INDEX idx_commission_rules_currency_active ON commission_rules(currency, is_active);
+CREATE INDEX idx_commission_rules_currency_type_active ON commission_rules(currency, transfer_type, is_active);
 CREATE INDEX idx_commission_rules_priority ON commission_rules(priority DESC);
 CREATE INDEX idx_commission_rules_effective ON commission_rules(effective_from, effective_to);
-CREATE INDEX idx_commission_rules_provider_type ON commission_rules(provider_id, transfer_type, is_active);
 ```
 
 #### 2. commission_transactions
@@ -387,10 +385,9 @@ Tracks platform commission revenue per transaction.
 ```sql
 CREATE TABLE commission_transactions (
     commission_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    transaction_id      UUID NOT NULL REFERENCES transactions(transaction_id) ON DELETE RESTRICT,
+    transaction_id      UUID NOT NULL,
     rule_id             UUID REFERENCES commission_rules(rule_id) ON DELETE SET NULL,
-    provider_id         UUID NOT NULL REFERENCES wallet_providers(provider_id) ON DELETE RESTRICT,
-    currency            VARCHAR(3) NOT NULL REFERENCES currencies(currency_code),
+    currency            VARCHAR(3) NOT NULL,
 
     -- Commission details
     amount              BIGINT NOT NULL CHECK (amount >= 0), -- Commission amount in XOF
@@ -407,10 +404,10 @@ CREATE TABLE commission_transactions (
 
 -- Indexes
 CREATE INDEX idx_commission_transactions_transaction ON commission_transactions(transaction_id);
-CREATE INDEX idx_commission_transactions_provider ON commission_transactions(provider_id);
 CREATE INDEX idx_commission_transactions_currency ON commission_transactions(currency);
 CREATE INDEX idx_commission_transactions_created_at ON commission_transactions(created_at DESC);
 CREATE INDEX idx_commission_transactions_settled ON commission_transactions(settled, settlement_date);
+CREATE INDEX idx_commission_transactions_revenue ON commission_transactions(currency, status, created_at) WHERE status = 'COMPLETED';
 ```
 
 ### Database Functions
@@ -484,9 +481,6 @@ public class CommissionRule {
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "rule_id")
     private UUID ruleId;
-
-    @Column(name = "provider_id", nullable = false)
-    private UUID providerId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "currency", nullable = false, length = 3)
@@ -649,9 +643,6 @@ public class CommissionTransaction {
     @Column(name = "rule_id")
     private UUID ruleId;
 
-    @Column(name = "provider_id", nullable = false)
-    private UUID providerId;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "currency", nullable = false, length = 3)
     private Currency currency;
@@ -756,7 +747,6 @@ Authorization: Bearer <JWT_TOKEN>
 {
   "amount": 50000,
   "currency": "XOF",
-  "providerId": "660e8400-e29b-41d4-a716-446655440001",
   "transferType": "SAME_WALLET",
   "kycLevel": "LEVEL_2"
 }
@@ -790,7 +780,6 @@ Authorization: Bearer <JWT_TOKEN>
 {
   "amount": 3000,
   "currency": "XOF",
-  "providerId": "660e8400-e29b-41d4-a716-446655440001",
   "transferType": "SAME_WALLET"
 }
 ```
@@ -820,7 +809,6 @@ Authorization: Bearer <JWT_TOKEN>
 Get all commission rules (paginated, filterable).
 
 **Query Parameters:**
-- `providerId` (optional) - Filter by provider
 - `currency` (optional) - Filter by currency
 - `transferType` (optional) - Filter by transfer type
 - `isActive` (optional, default: true) - Filter by active status
@@ -835,8 +823,6 @@ Get all commission rules (paginated, filterable).
     "content": [
       {
         "ruleId": "770e8400-e29b-41d4-a716-446655440002",
-        "providerId": "660e8400-e29b-41d4-a716-446655440001",
-        "providerName": "Orange Money Senegal",
         "currency": "XOF",
         "transferType": "SAME_WALLET",
         "percentage": 0.005,
@@ -847,7 +833,7 @@ Get all commission rules (paginated, filterable).
         "priority": 10,
         "effectiveFrom": "2025-01-01T00:00:00Z",
         "effectiveTo": null,
-        "description": "Orange Money same wallet: 0.5% + 100 XOF (max 1000)"
+        "description": "Same wallet transfer: 0.5% + 100 XOF (max 1000)"
       }
     ],
     "page": 0,
@@ -869,7 +855,6 @@ Create a new commission rule (Admin only).
 **Request Body:**
 ```json
 {
-  "providerId": "660e8400-e29b-41d4-a716-446655440001",
   "currency": "XOF",
   "transferType": "SAME_WALLET",
   "minTransaction": null,
@@ -893,7 +878,6 @@ Create a new commission rule (Admin only).
   "message": "Règle de commission créée avec succès",
   "data": {
     "ruleId": "770e8400-e29b-41d4-a716-446655440002",
-    "providerId": "660e8400-e29b-41d4-a716-446655440001",
     "currency": "XOF",
     "transferType": "SAME_WALLET",
     "percentage": 0.005,
@@ -901,7 +885,7 @@ Create a new commission rule (Admin only).
     "minAmount": 50,
     "maxAmount": 1000,
     "isActive": true,
-    "createdAt": "2025-10-19T10:00:00Z"
+    "createdAt": "2025-10-20T10:00:00Z"
   }
 }
 ```
@@ -935,7 +919,7 @@ Update an existing commission rule (Admin only).
     "percentage": 0.0075,
     "fixedAmount": 150,
     "maxAmount": 1500,
-    "updatedAt": "2025-10-19T11:00:00Z"
+    "updatedAt": "2025-10-20T11:00:00Z"
   }
 }
 ```
@@ -965,11 +949,10 @@ Deactivate a commission rule (soft delete).
 Get revenue report by provider, period, currency.
 
 **Query Parameters:**
-- `providerId` (optional)
 - `currency` (optional)
 - `startDate` (required) - ISO 8601 date
 - `endDate` (required) - ISO 8601 date
-- `groupBy` (optional: PROVIDER, CURRENCY, DAY, MONTH) - default: PROVIDER
+- `groupBy` (optional: CURRENCY, DAY, MONTH) - default: CURRENCY
 
 **Response (200 OK):**
 ```json
@@ -988,22 +971,12 @@ Get revenue report by provider, period, currency.
     "unsettledAmount": 500000,
     "breakdown": [
       {
-        "providerId": "660e8400-e29b-41d4-a716-446655440001",
-        "providerName": "Orange Money Senegal",
-        "revenue": 1500000,
-        "transactionCount": 900,
+        "currency": "XOF",
+        "revenue": 2500000,
+        "transactionCount": 1500,
         "averageCommission": 1666,
-        "settled": 1200000,
-        "unsettled": 300000
-      },
-      {
-        "providerId": "aa0e8400-e29b-41d4-a716-446655440005",
-        "providerName": "Wave Senegal",
-        "revenue": 1000000,
-        "transactionCount": 600,
-        "averageCommission": 1666,
-        "settled": 800000,
-        "unsettled": 200000
+        "settled": 2000000,
+        "unsettled": 500000
       }
     ]
   }
@@ -1023,7 +996,6 @@ Record commission for a completed transaction (called internally by Transaction 
 {
   "transactionId": "880e8400-e29b-41d4-a716-446655440003",
   "ruleId": "770e8400-e29b-41d4-a716-446655440002",
-  "providerId": "660e8400-e29b-41d4-a716-446655440001",
   "amount": 350,
   "currency": "XOF",
   "calculationBasis": {
@@ -1045,7 +1017,7 @@ Record commission for a completed transaction (called internally by Transaction 
     "transactionId": "880e8400-e29b-41d4-a716-446655440003",
     "amount": 350,
     "status": "COMPLETED",
-    "createdAt": "2025-10-19T10:30:00Z"
+    "createdAt": "2025-10-20T10:30:00Z"
   }
 }
 ```
@@ -1075,10 +1047,10 @@ public interface CommissionService {
 
     // Fee calculation
     FeeCalculationResponse calculateFee(CalculateFeeRequest request);
-    Long calculateFee(Long amount, Currency currency, UUID providerId, TransferType transferType, KYCLevel kycLevel);
+    Long calculateFee(Long amount, Currency currency, TransferType transferType, KYCLevel kycLevel);
 
     // Commission recording
-    void recordCommission(UUID transactionId, UUID ruleId, UUID providerId, Long amount, Currency currency, String calculationBasis);
+    void recordCommission(UUID transactionId, UUID ruleId, Long amount, Currency currency, String calculationBasis);
 
     // BCEAO-compliant fee calculation
     Long calculateBCEAOFee(Long amount);
@@ -1146,19 +1118,19 @@ public class FeeCalculationEngine {
     /**
      * Calculate fee using custom commission rules
      */
-    @Cacheable(value = "commission-calculation", key = "#amount + '-' + #providerId + '-' + #transferType")
-    public Long calculateFee(Long amount, Currency currency, UUID providerId, TransferType transferType, KYCLevel kycLevel) {
-        log.info("Calculating fee: amount={}, currency={}, provider={}, type={}, kycLevel={}",
-                 amount, currency, providerId, transferType, kycLevel);
+    @Cacheable(value = "commission-calculation", key = "#amount + '-' + #currency + '-' + #transferType")
+    public Long calculateFee(Long amount, Currency currency, TransferType transferType, KYCLevel kycLevel) {
+        log.info("Calculating fee: amount={}, currency={}, type={}, kycLevel={}",
+                 amount, currency, transferType, kycLevel);
 
-        // Get active rules for this provider, currency, and transfer type, ordered by priority
-        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByProviderAndCurrencyAndType(
-            providerId, currency, transferType
+        // Get active rules for this currency and transfer type, ordered by priority
+        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByCurrencyAndType(
+            currency, transferType
         );
 
         if (rules.isEmpty()) {
-            log.warn("No commission rules found for provider {} and transfer type {}, using BCEAO default",
-                     providerId, transferType);
+            log.warn("No commission rules found for currency {} and transfer type {}, using BCEAO default",
+                     currency, transferType);
             return calculateBCEAOFee(amount);
         }
 
@@ -1179,10 +1151,10 @@ public class FeeCalculationEngine {
     /**
      * Get matching rule for transaction
      */
-    public CommissionRule findMatchingRule(Long amount, Currency currency, UUID providerId,
+    public CommissionRule findMatchingRule(Long amount, Currency currency,
                                           TransferType transferType, KYCLevel kycLevel) {
-        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByProviderAndCurrencyAndType(
-            providerId, currency, transferType
+        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByCurrencyAndType(
+            currency, transferType
         );
 
         return rules.stream()
@@ -1232,7 +1204,6 @@ public class CommissionServiceImpl implements CommissionService {
         Long feeAmount = feeCalculationEngine.calculateFee(
             request.getAmount(),
             request.getCurrency(),
-            request.getProviderId(),
             request.getTransferType(),
             request.getKycLevel()
         );
@@ -1240,7 +1211,6 @@ public class CommissionServiceImpl implements CommissionService {
         CommissionRule matchingRule = feeCalculationEngine.findMatchingRule(
             request.getAmount(),
             request.getCurrency(),
-            request.getProviderId(),
             request.getTransferType(),
             request.getKycLevel()
         );
@@ -1256,20 +1226,19 @@ public class CommissionServiceImpl implements CommissionService {
 
     @Override
     @Transactional(readOnly = true)
-    public Long calculateFee(Long amount, Currency currency, UUID providerId,
+    public Long calculateFee(Long amount, Currency currency,
                             TransferType transferType, KYCLevel kycLevel) {
-        return feeCalculationEngine.calculateFee(amount, currency, providerId, transferType, kycLevel);
+        return feeCalculationEngine.calculateFee(amount, currency, transferType, kycLevel);
     }
 
     @Override
-    public void recordCommission(UUID transactionId, UUID ruleId, UUID providerId,
+    public void recordCommission(UUID transactionId, UUID ruleId,
                                 Long amount, Currency currency, String calculationBasis) {
         log.info("Recording commission: transaction={}, amount={} {}", transactionId, amount, currency);
 
         CommissionTransaction commission = CommissionTransaction.builder()
                 .transactionId(transactionId)
                 .ruleId(ruleId)
-                .providerId(providerId)
                 .amount(amount)
                 .currency(currency)
                 .calculationBasis(calculationBasis)
@@ -1317,7 +1286,6 @@ import java.util.UUID;
 public class CommissionCollectedEvent extends BaseEvent {
     private UUID commissionId;
     private UUID transactionId;
-    private UUID providerId;
     private Long amount;
     private String currency;
     private String calculationBasis;
@@ -1348,7 +1316,6 @@ public class CommissionEventPublisher {
         CommissionCollectedEvent event = CommissionCollectedEvent.builder()
                 .commissionId(commission.getCommissionId())
                 .transactionId(commission.getTransactionId())
-                .providerId(commission.getProviderId())
                 .amount(commission.getAmount())
                 .currency(commission.getCurrency().name())
                 .calculationBasis(commission.getCalculationBasis())
@@ -1524,6 +1491,19 @@ This implementation guide provides:
 
 ---
 
-**Document Version**: 1.0.0
-**Last Updated**: 2025-10-19
+**Document Version**: 1.1.0
+**Last Updated**: 2025-10-20
 **Maintained By**: Technical Architecture Team
+
+## Changelog
+
+### Version 1.1.0 (2025-10-20)
+- Removed `providerId` from commission rules - rules now function as a centralized wallet
+- Updated database schema to remove `provider_id` column from both `commission_rules` and `commission_transactions` tables
+- Modified unique constraints and indexes to reflect wallet-based architecture
+- Updated all API endpoints and DTOs to remove provider-specific filtering
+- Changed revenue reporting to group by currency instead of provider
+- Simplified commission rule management to be currency and transfer-type based
+
+### Version 1.0.0 (2025-10-19)
+- Initial implementation guide

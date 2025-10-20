@@ -3,7 +3,7 @@ package com.payment.commission.controller;
 import com.payment.commission.dto.request.CalculateFeeRequest;
 import com.payment.commission.dto.response.FeeCalculationResponse;
 import com.payment.commission.service.CommissionService;
-import com.payment.commission.service.MessageService;
+import com.payment.common.i18n.MessageService;
 import com.payment.common.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

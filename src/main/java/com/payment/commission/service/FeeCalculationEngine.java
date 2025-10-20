@@ -11,9 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.payment.common.i18n.MessageService;
 
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Fee Calculation Engine
@@ -54,7 +54,7 @@ public class FeeCalculationEngine {
         Long finalFee = Math.min(totalFee, BCEAO_MAX_FEE);
 
         log.info("BCEAO fee for {} XOF: {} (fixed: {}, percentage: {}, capped at: {})",
-                 amount, finalFee, BCEAO_FIXED_FEE, percentageFee, BCEAO_MAX_FEE);
+                amount, finalFee, BCEAO_FIXED_FEE, percentageFee, BCEAO_MAX_FEE);
 
         return finalFee;
     }
@@ -62,20 +62,20 @@ public class FeeCalculationEngine {
     /**
      * Calculate fee using custom commission rules
      */
-    @Cacheable(value = "commission-calculation", key = "#amount + '-' + #providerId + '-' + #transferType")
-    public Long calculateFee(Long amount, Currency currency, UUID providerId,
-                            TransferType transferType, KYCLevel kycLevel) {
-        log.info("Calculating fee: amount={}, currency={}, provider={}, type={}, kycLevel={}",
-                 amount, currency, providerId, transferType, kycLevel);
+    @Cacheable(value = "commission-calculation", key = "#amount + '-' + #currency + '-' + #transferType")
+    public Long calculateFee(Long amount, Currency currency,
+                             TransferType transferType, KYCLevel kycLevel) {
+        log.info("Calculating fee: amount={}, currency={}, type={}, kycLevel={}",
+                amount, currency, transferType, kycLevel);
 
-        // Get active rules for this provider, currency, and transfer type, ordered by priority
-        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByProviderAndCurrencyAndType(
-            providerId, currency, transferType
+        // Get active rules for this currency and transfer type, ordered by priority
+        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByCurrencyAndType(
+                currency, transferType
         );
 
         if (rules.isEmpty()) {
-            log.warn("No commission rules found for provider {} and transfer type {}, using BCEAO default",
-                     providerId, transferType);
+            log.warn("No commission rules found for currency {} and transfer type {}, using BCEAO default",
+                    currency, transferType);
             return calculateBCEAOFee(amount);
         }
 
@@ -84,7 +84,7 @@ public class FeeCalculationEngine {
                 .filter(rule -> rule.matches(amount, transferType, kycLevel))
                 .findFirst()
                 .orElseThrow(() -> new NoMatchingRuleException(
-                    messageService.getMessage("error.no.matching.rule")
+                        messageService.getMessage("error.no.matching.rule")
                 ));
 
         Long fee = matchingRule.calculateFee(amount);
@@ -96,10 +96,10 @@ public class FeeCalculationEngine {
     /**
      * Get matching rule for transaction
      */
-    public CommissionRule findMatchingRule(Long amount, Currency currency, UUID providerId,
-                                          TransferType transferType, KYCLevel kycLevel) {
-        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByProviderAndCurrencyAndType(
-            providerId, currency, transferType
+    public CommissionRule findMatchingRule(Long amount, Currency currency,
+                                           TransferType transferType, KYCLevel kycLevel) {
+        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByCurrencyAndType(
+                currency, transferType
         );
 
         return rules.stream()

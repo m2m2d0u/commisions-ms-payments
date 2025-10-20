@@ -22,13 +22,13 @@ public interface CommissionService {
     /**
      * Calculate fee amount
      */
-    Long calculateFee(Long amount, Currency currency, UUID providerId,
+    Long calculateFee(Long amount, Currency currency,
                      TransferType transferType, KYCLevel kycLevel);
 
     /**
      * Record commission for a completed transaction
      */
-    void recordCommission(UUID transactionId, UUID ruleId, UUID providerId,
+    void recordCommission(UUID transactionId, UUID ruleId,
                          Long amount, Currency currency, String calculationBasis);
 
     /**

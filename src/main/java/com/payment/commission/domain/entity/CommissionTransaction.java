@@ -34,9 +34,6 @@ public class CommissionTransaction {
     @Column(name = "rule_id")
     private UUID ruleId;
 
-    @Column(name = "provider_id", nullable = false)
-    private UUID providerId;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "currency", nullable = false, length = 3)
     private Currency currency;

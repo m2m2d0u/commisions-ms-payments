@@ -44,16 +44,13 @@ dependencies {
     implementation 'org.postgresql:postgresql'
     implementation 'org.flywaydb:flyway-core'
 
-    // Kafka
-    implementation 'org.springframework.kafka:spring-kafka'
-
     // Redis (for caching commission rules)
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
     // Shared libraries
-    implementation 'com.payment:payment-common-lib:1.0.9'
-    implementation 'com.payment:payment-security-lib:1.0.9'
-    implementation 'com.payment:payment-kafka-lib:1.0.9'
+    implementation 'com.payment:payment-common-lib:1.0.15'
+    implementation 'com.payment:payment-security-lib:1.0.15'
+    implementation 'com.payment:payment-kafka-lib:1.0.15'
 
     // JSON handling for JSONB
     implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'

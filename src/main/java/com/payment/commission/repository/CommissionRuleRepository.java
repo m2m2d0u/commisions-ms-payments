@@ -18,46 +18,37 @@ import java.util.UUID;
 public interface CommissionRuleRepository extends JpaRepository<CommissionRule, UUID> {
 
     /**
-     * Find all active rules for a provider and currency, ordered by priority (descending)
+     * Find all active rules for currency, ordered by priority (descending)
      */
     @Query("SELECT cr FROM CommissionRule cr " +
-           "WHERE cr.providerId = :providerId " +
-           "AND cr.currency = :currency " +
+           "WHERE cr.currency = :currency " +
            "AND cr.isActive = true " +
            "AND CURRENT_TIMESTAMP >= cr.effectiveFrom " +
            "AND (cr.effectiveTo IS NULL OR CURRENT_TIMESTAMP < cr.effectiveTo) " +
            "ORDER BY cr.priority DESC")
-    List<CommissionRule> findActiveRulesByProviderAndCurrency(
-            @Param("providerId") UUID providerId,
+    List<CommissionRule> findActiveRulesByCurrency(
             @Param("currency") Currency currency
     );
 
     /**
-     * Find active rules by provider, currency, and transfer type, ordered by priority
+     * Find active rules by currency and transfer type, ordered by priority
      */
     @Query("SELECT cr FROM CommissionRule cr " +
-           "WHERE cr.providerId = :providerId " +
-           "AND cr.currency = :currency " +
+           "WHERE cr.currency = :currency " +
            "AND cr.transferType = :transferType " +
            "AND cr.isActive = true " +
            "AND CURRENT_TIMESTAMP >= cr.effectiveFrom " +
            "AND (cr.effectiveTo IS NULL OR CURRENT_TIMESTAMP < cr.effectiveTo) " +
            "ORDER BY cr.priority DESC")
-    List<CommissionRule> findActiveRulesByProviderAndCurrencyAndType(
-            @Param("providerId") UUID providerId,
+    List<CommissionRule> findActiveRulesByCurrencyAndType(
             @Param("currency") Currency currency,
             @Param("transferType") TransferType transferType
     );
 
     /**
-     * Find all rules for a provider (active and inactive)
+     * Find rules by active status
      */
-    List<CommissionRule> findByProviderId(UUID providerId);
-
-    /**
-     * Find rules by provider and active status
-     */
-    List<CommissionRule> findByProviderIdAndIsActive(UUID providerId, Boolean isActive);
+    List<CommissionRule> findByIsActive(Boolean isActive);
 
     /**
      * Find rules by currency

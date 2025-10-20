@@ -17,8 +17,6 @@ import java.util.UUID;
 @Builder
 public class SettlementReportResponse {
 
-    private UUID providerId;
-    private String providerName;
     private Currency currency;
     private Long totalUnsettled;
     private Long totalSettled;

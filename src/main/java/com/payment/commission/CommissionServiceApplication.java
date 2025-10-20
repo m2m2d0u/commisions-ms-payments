@@ -17,7 +17,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
  * @version 1.0.0
  * @author Payment System Team
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.payment.commission", "com.payment.common", "com.payment.security", "com.payment.kafka"})
 @EnableCaching
 @EnableJpaAuditing
 public class CommissionServiceApplication {

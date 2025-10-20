@@ -12,7 +12,7 @@ import java.util.UUID;
 
 /**
  * Commission Rule Entity
- * Stores commission calculation rules per wallet provider and currency.
+ * Stores commission calculation rules as a wallet containing commission rules.
  */
 @Entity
 @Table(name = "commission_rules")
@@ -27,9 +27,6 @@ public class CommissionRule {
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "rule_id")
     private UUID ruleId;
-
-    @Column(name = "provider_id", nullable = false)
-    private UUID providerId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "currency", nullable = false, length = 3)
