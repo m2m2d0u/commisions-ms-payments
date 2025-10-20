@@ -73,12 +73,6 @@ public class CommissionServiceImpl implements CommissionService {
                 .build();
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public Long calculateFee(Long amount, Currency currency,
-                             TransferType transferType, KYCLevel kycLevel) {
-        return feeCalculationEngine.calculateFee(amount, currency, transferType, kycLevel);
-    }
 
     @Override
     public void recordCommission(UUID transactionId, UUID ruleId,

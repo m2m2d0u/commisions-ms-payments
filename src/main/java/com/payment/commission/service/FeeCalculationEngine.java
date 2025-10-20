@@ -125,39 +125,6 @@ public class FeeCalculationEngine {
     }
 
     /**
-     * @deprecated Use calculateFeeByRuleId instead - rules are now mandatory via ruleId
-     */
-    @Deprecated
-    public Long calculateFee(Long amount, Currency currency,
-                             TransferType transferType, KYCLevel kycLevel) {
-        log.warn("DEPRECATED: calculateFee without ruleId is deprecated. Use calculateFeeByRuleId instead.");
-        log.info("Calculating fee: amount={}, currency={}, type={}, kycLevel={}",
-                amount, currency, transferType, kycLevel);
-
-        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByCurrencyAndType(
-                currency, transferType
-        );
-
-        if (rules.isEmpty()) {
-            log.warn("No commission rules found for currency {} and transfer type {}, using BCEAO default",
-                    currency, transferType);
-            return calculateBCEAOFee(amount);
-        }
-
-        CommissionRule matchingRule = rules.stream()
-                .filter(rule -> rule.matches(amount, transferType, kycLevel))
-                .findFirst()
-                .orElseThrow(() -> new NoMatchingRuleException(
-                        messageService.getMessage("error.no.matching.rule")
-                ));
-
-        Long fee = matchingRule.calculateFee(amount);
-        log.info("Fee calculated using rule {}: {} XOF", matchingRule.getRuleId(), fee);
-
-        return fee;
-    }
-
-    /**
      * Get matching rule for transaction
      * @deprecated Use getRuleById with explicit ruleId instead
      */

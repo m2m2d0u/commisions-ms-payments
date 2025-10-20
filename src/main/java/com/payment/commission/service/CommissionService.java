@@ -20,12 +20,6 @@ public interface CommissionService {
     FeeCalculationResponse calculateFee(CalculateFeeRequest request);
 
     /**
-     * Calculate fee amount
-     */
-    Long calculateFee(Long amount, Currency currency,
-                     TransferType transferType, KYCLevel kycLevel);
-
-    /**
      * Record commission for a completed transaction
      */
     void recordCommission(UUID transactionId, UUID ruleId,
