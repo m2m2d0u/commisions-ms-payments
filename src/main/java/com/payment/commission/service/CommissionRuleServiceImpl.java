@@ -3,7 +3,7 @@ package com.payment.commission.service;
 import com.payment.commission.domain.entity.CommissionRule;
 import com.payment.commission.dto.request.CreateRuleRequest;
 import com.payment.commission.dto.request.UpdateRuleRequest;
-import com.payment.commission.dto.response.CommissionRuleResponse;
+import com.payment.common.dto.commission.response.CommissionRuleResponse;
 import com.payment.commission.exception.InvalidRuleException;
 import com.payment.commission.exception.RuleNotFoundException;
 import com.payment.commission.mapper.CommissionRuleMapper;

@@ -2,9 +2,9 @@ package com.payment.commission.service;
 
 import com.payment.common.enums.Currency;
 import com.payment.common.enums.KYCLevel;
-import com.payment.commission.domain.enums.TransferType;
-import com.payment.commission.dto.request.CalculateFeeRequest;
-import com.payment.commission.dto.response.FeeCalculationResponse;
+import com.payment.common.enums.TransferType;
+import com.payment.common.dto.commission.request.CalculateFeeRequest;
+import com.payment.common.dto.commission.response.FeeCalculationResponse;
 
 import java.util.UUID;
 

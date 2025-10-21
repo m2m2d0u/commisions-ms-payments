@@ -2,7 +2,7 @@ package com.payment.commission.dto.request;
 
 import com.payment.common.enums.Currency;
 import com.payment.common.enums.KYCLevel;
-import com.payment.commission.domain.enums.TransferType;
+import com.payment.common.enums.TransferType;
 import jakarta.validation.constraints.*;
 import lombok.*;
 

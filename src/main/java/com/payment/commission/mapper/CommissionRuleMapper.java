@@ -1,7 +1,7 @@
 package com.payment.commission.mapper;
 
 import com.payment.commission.domain.entity.CommissionRule;
-import com.payment.commission.dto.response.CommissionRuleResponse;
+import com.payment.common.dto.commission.response.CommissionRuleResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 

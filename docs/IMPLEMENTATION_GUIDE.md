@@ -1,4 +1,4 @@
-# Commission Service - Complete Implementation Guide
+# Commission Service - Implementation Guide
 
 **Service**: payment-commission-service
 **Version**: 1.0.0
@@ -6,7 +6,7 @@
 **Framework**: Spring Boot 3.2.0
 **Build Tool**: Gradle 8.5+
 **Purpose**: Transaction fee calculation, commission rule management, revenue tracking, and settlement
-**Last Updated**: 2025-10-20
+**Last Updated**: 2025-10-21
 
 ---
 
@@ -14,19 +14,12 @@
 
 1. [Overview](#overview)
 2. [Service Architecture](#service-architecture)
-3. [Technology Stack](#technology-stack)
-4. [Project Structure](#project-structure)
-5. [Database Schema](#database-schema)
-6. [Domain Model](#domain-model)
-7. [API Specifications](#api-specifications)
-8. [Service Layer](#service-layer)
-9. [Repository Layer](#repository-layer)
-10. [Event Publishing](#event-publishing)
-11. [Security & Authentication](#security--authentication)
-12. [Configuration](#configuration)
-13. [Testing Strategy](#testing-strategy)
-14. [Deployment](#deployment)
-15. [Implementation Checklist](#implementation-checklist)
+3. [Core Workflows](#core-workflows)
+4. [Business Rules](#business-rules)
+5. [Validation Rules](#validation-rules)
+6. [API Workflow](#api-workflow)
+7. [Event Workflows](#event-workflows)
+8. [Implementation Checklist](#implementation-checklist)
 
 ---
 
@@ -36,41 +29,13 @@ The **Commission Service** is responsible for calculating and tracking all trans
 
 ### Core Responsibilities
 
-- ✅ **Fee Calculation** - Calculate transaction fees based on BCEAO rules
+- ✅ **Fee Calculation** - Calculate transaction fees based on commission rules
 - ✅ **Commission Rules Management** - Manage fee rules as a centralized wallet by currency and transfer type
 - ✅ **Revenue Tracking** - Track platform commission revenue per transaction
 - ✅ **Settlement Management** - Track settlement status
 - ✅ **Revenue Reporting** - Generate revenue reports by period and currency
 - ✅ **Rule Versioning** - Support time-based rule activation/expiration
 - ✅ **Multi-Currency Support** - Handle XOF and XAF commissions
-
-### Key Business Rules (BCEAO Compliance)
-
-1. **BCEAO Fee Structure**:
-   - Transfers ≤ 5,000 XOF: **FREE** (financial inclusion mandate)
-   - Transfers > 5,000 XOF: **100 XOF fixed + 0.5% of amount**, capped at **1,000 XOF**
-   - Formula: `min(100 + (amount × 0.005), 1000)`
-
-2. **Commission Types**:
-   - **SAME_WALLET**: Same provider (e.g., Orange Money → Orange Money)
-   - **CROSS_WALLET**: Different providers (e.g., Orange Money → Wave)
-   - **INTERNATIONAL**: Cross-country transfers
-
-3. **Rule Priority System**:
-   - Multiple rules can exist for the same currency and transfer type
-   - Higher priority rules are evaluated first
-   - First matching rule is applied
-
-4. **Commission Components**:
-   - **Percentage Fee**: % of transaction amount
-   - **Fixed Fee**: Flat amount added to percentage
-   - **Minimum Fee**: Floor value (can't charge less)
-   - **Maximum Fee**: Ceiling value (can't charge more)
-
-5. **Settlement Tracking**:
-   - Commissions marked as PENDING/COMPLETED
-   - Track settlement status
-   - Generate settlement reports
 
 ---
 
@@ -92,9 +57,9 @@ The **Commission Service** is responsible for calculating and tracking all trans
          ┌──────────────────┼──────────────────┐
          │                  │                  │
 ┌────────▼────────┐ ┌──────▼────────┐ ┌───────▼──────────┐
-│ Commission      │ │ Commission    │ │ Rule             │
-│ Rule Repo       │ │ Transaction   │ │ Engine           │
-│                 │ │ Repo          │ │                  │
+│ Commission      │ │ Commission    │ │ Fee              │
+│ Rule Repo       │ │ Transaction   │ │ Calculation      │
+│                 │ │ Repo          │ │ Engine           │
 └─────────────────┘ └───────────────┘ └──────────────────┘
                             │
 ┌─────────────────────────────────────────────────────────────┐
@@ -104,9 +69,6 @@ The **Commission Service** is responsible for calculating and tracking all trans
 ```
 
 ### Integration Points
-
-**Outbound (This service calls)**:
-- None (stateless calculation service)
 
 **Inbound (Other services call this)**:
 - Transaction Service (calculate fees for transactions)
@@ -124,1319 +86,586 @@ The **Commission Service** is responsible for calculating and tracking all trans
 
 ---
 
-## Technology Stack
+## Core Workflows
 
-### Core Dependencies
+### 1. Fee Calculation Workflow (Rule-Based)
 
-```gradle
-plugins {
-    id 'java'
-    id 'org.springframework.boot' version '3.2.0'
-    id 'io.spring.dependency-management' version '1.1.4'
-}
+**Trigger**: Transaction Service calls `/api/v1/commissions/calculate`
 
-group = 'com.payment'
-version = '1.0.0'
-sourceCompatibility = '17'
+**Request Requirements**:
+- `ruleId` (UUID) - **MANDATORY** - The specific commission rule to use
+- `amount` (Long) - Transaction amount
+- `currency` (String) - XOF or XAF
+- `transferType` (String) - SAME_WALLET, CROSS_WALLET, or INTERNATIONAL
+- `kycLevel` (String) - LEVEL_1, LEVEL_2, LEVEL_3, or ANY (optional)
 
-repositories {
-    mavenCentral()
-    mavenLocal() // For shared libraries
-}
+**Workflow Steps**:
 
-dependencies {
-    // Spring Boot Starters
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
-    implementation 'org.springframework.boot:spring-boot-starter-security'
-    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+1. **Receive Request**
+   - Validate request body (ruleId, amount, currency, transferType)
+   - Extract parameters
 
-    // Shared Libraries (MUST be built first)
-    implementation 'com.payment:payment-common-lib:1.0.0'
-    implementation 'com.payment:payment-security-lib:1.0.0'
-    implementation 'com.payment:payment-kafka-lib:1.0.0'
+2. **Retrieve Commission Rule**
+   - Fetch rule by `ruleId` from database
+   - If not found → throw `RuleNotFoundException`
 
-    // Database
-    implementation 'org.postgresql:postgresql'
-    implementation 'org.flywaydb:flyway-core'
+3. **Validate Rule Status**
+   - Check if rule `isActive = true`
+   - If not active → throw `RuleNotFoundException` with message "Rule is not active"
 
-    // Kafka
-    implementation 'org.springframework.kafka:spring-kafka'
+4. **Validate Rule Effective Date**
+   - Check if current date is within `effectiveFrom` and `effectiveTo` range
+   - If not effective → throw `RuleNotFoundException` with message "Rule is not effective for current date"
 
-    // Redis (for caching commission rules)
-    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+5. **Validate Transaction Amount Range** ⭐ NEW
+   - Check if `amount >= rule.minAmount` (if minAmount is set)
+   - If below minimum → throw `NoMatchingRuleException` with message and minimum value
+   - Check if `amount <= rule.maxAmount` (if maxAmount is set)
+   - If above maximum → throw `NoMatchingRuleException` with message and maximum value
 
-    // Utilities
-    implementation 'org.mapstruct:mapstruct:1.5.5.Final'
-    annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
-    compileOnly 'org.projectlombok:lombok'
-    annotationProcessor 'org.projectlombok:lombok'
-    annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
+6. **Calculate Fee**
+   - Apply percentage: `percentageFee = amount × rule.percentage`
+   - Add fixed amount: `totalFee = percentageFee + rule.fixedAmount`
+   - Apply minimum cap: `if totalFee < rule.minAmount then totalFee = rule.minAmount`
+   - Apply maximum cap: `if totalFee > rule.maxAmount then totalFee = rule.maxAmount`
 
-    // API Documentation
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
+7. **Build Response**
+   - Return `FeeCalculationResponse` with:
+     - Transaction amount
+     - Currency
+     - Commission amount
+     - Rule ID
+     - Transfer type
+     - Calculation details (percentage, fixed amount, min/max, etc.)
 
-    // Testing
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.testcontainers:postgresql:1.19.3'
-    testImplementation 'org.testcontainers:kafka:1.19.3'
-    testImplementation 'org.springframework.kafka:spring-kafka-test'
-    testImplementation 'io.rest-assured:rest-assured:5.3.2'
-}
+8. **Return Success Response**
+   - HTTP 200 OK with fee calculation details
 
-tasks.named('test') {
-    useJUnitPlatform()
-}
+**Error Scenarios**:
+- Missing `ruleId` → HTTP 400 Bad Request
+- Rule not found → HTTP 404 Not Found
+- Rule not active → HTTP 404 Not Found
+- Rule not effective → HTTP 404 Not Found
+- Amount below minimum → HTTP 400 Bad Request
+- Amount above maximum → HTTP 400 Bad Request
+- Invalid currency/transferType → HTTP 400 Bad Request
+
+---
+
+### 2. BCEAO Fee Calculation Workflow (Legacy)
+
+**Trigger**: Called when no custom rules exist (fallback)
+
+**BCEAO Rules**:
+1. Amount ≤ 5,000 XOF → **FREE** (financial inclusion mandate)
+2. Amount > 5,000 XOF → **100 XOF + 0.5% of amount**, capped at **1,000 XOF**
+
+**Workflow Steps**:
+
+1. **Check Free Threshold**
+   - If `amount ≤ 5,000 XOF` → return fee = 0
+
+2. **Calculate Standard Fee**
+   - `percentageFee = amount × 0.005` (0.5%)
+   - `totalFee = 100 + percentageFee`
+
+3. **Apply Maximum Cap**
+   - `finalFee = min(totalFee, 1000)`
+
+4. **Return Fee**
+   - Return calculated fee amount
+
+---
+
+### 3. Commission Recording Workflow
+
+**Trigger**: Transaction completed event or direct API call
+
+**Workflow Steps**:
+
+1. **Receive Transaction Details**
+   - Transaction ID
+   - Rule ID used for calculation
+   - Commission amount
+   - Currency
+   - Calculation basis (JSON with details)
+
+2. **Create Commission Record**
+   - Generate commission ID (UUID)
+   - Set status = COMPLETED
+   - Set settled = false
+   - Record timestamp
+
+3. **Save to Database**
+   - Insert into `commission_transactions` table
+
+4. **Publish Event**
+   - Publish `COMMISSION_COLLECTED` event to Kafka
+   - Include commission ID, transaction ID, amount, currency
+
+5. **Log Success**
+   - Log commission recorded successfully
+
+---
+
+### 4. Commission Rule Management Workflow
+
+#### Create Rule Workflow
+
+1. **Receive Create Request** (Admin only)
+   - Validate all required fields
+   - Validate percentage (0 ≤ percentage ≤ 1.0)
+   - Validate amounts (min ≥ 0, max > min if both set)
+
+2. **Business Validation**
+   - Check effective dates (effectiveTo > effectiveFrom)
+   - Validate currency (XOF or XAF)
+   - Validate transfer type
+
+3. **Create Rule Entity**
+   - Generate rule ID
+   - Set timestamps
+   - Set created_by (from JWT)
+
+4. **Save to Database**
+   - Insert into `commission_rules` table
+
+5. **Return Success**
+   - HTTP 201 Created with rule details
+
+#### Update Rule Workflow
+
+1. **Receive Update Request** (Admin only)
+   - Rule ID in path
+   - Fields to update in body
+
+2. **Retrieve Existing Rule**
+   - Fetch by rule ID
+   - If not found → HTTP 404
+
+3. **Apply Updates**
+   - Update allowed fields only
+   - Update `updated_at` timestamp
+
+4. **Validate Updated Rule**
+   - Re-validate business rules
+   - Check constraints
+
+5. **Save Changes**
+   - Update database
+
+6. **Return Success**
+   - HTTP 200 OK with updated rule
+
+#### Deactivate Rule Workflow
+
+1. **Receive Deactivate Request** (Admin only)
+   - Rule ID in path
+
+2. **Retrieve Rule**
+   - Fetch by rule ID
+   - If not found → HTTP 404
+
+3. **Soft Delete**
+   - Set `isActive = false`
+   - Update timestamp
+
+4. **Save Changes**
+   - Update database
+
+5. **Return Success**
+   - HTTP 200 OK
+
+---
+
+### 5. Revenue Reporting Workflow
+
+**Trigger**: Admin requests revenue report
+
+**Workflow Steps**:
+
+1. **Receive Report Request**
+   - Start date (required)
+   - End date (required)
+   - Currency (optional filter)
+   - Group by (CURRENCY, DAY, MONTH)
+
+2. **Validate Date Range**
+   - Ensure endDate > startDate
+   - Check date range not too large (e.g., max 1 year)
+
+3. **Query Database**
+   - Filter by date range
+   - Filter by currency if provided
+   - Filter by status = COMPLETED
+   - Group by requested dimension
+
+4. **Calculate Metrics**
+   - Total revenue (sum of amounts)
+   - Transaction count
+   - Average commission
+   - Settled amount
+   - Unsettled amount
+
+5. **Build Report Response**
+   - Report period
+   - Total metrics
+   - Breakdown by group
+
+6. **Return Report**
+   - HTTP 200 OK with report data
+
+---
+
+### 6. Commission Refund Workflow
+
+**Trigger**: Transaction reversed event
+
+**Workflow Steps**:
+
+1. **Receive Refund Event**
+   - Transaction ID to refund
+
+2. **Find Commission Record**
+   - Query by transaction ID
+   - If not found → log warning and return
+
+3. **Update Commission Status**
+   - Set status = REFUNDED
+   - Keep original amount for audit
+
+4. **Save Changes**
+   - Update database
+
+5. **Publish Event**
+   - Publish `COMMISSION_REFUNDED` event to Kafka
+
+6. **Log Success**
+   - Log commission refunded
+
+---
+
+## Business Rules
+
+### 1. BCEAO Fee Structure
+
+**Financial Inclusion Rule**:
+- Transfers ≤ 5,000 XOF: **FREE**
+- Purpose: Promote financial inclusion for small transactions
+
+**Standard Fee Rule**:
+- Transfers > 5,000 XOF: **100 XOF fixed + 0.5% of amount**
+- Maximum cap: **1,000 XOF**
+- Formula: `min(100 + (amount × 0.005), 1000)`
+
+### 2. Commission Types
+
+- **SAME_WALLET**: Same provider (e.g., Orange Money → Orange Money)
+- **CROSS_WALLET**: Different providers (e.g., Orange Money → Wave)
+- **INTERNATIONAL**: Cross-country transfers
+
+### 3. Rule Priority System
+
+- Multiple rules can exist for the same currency and transfer type
+- Higher priority rules are evaluated first
+- First matching rule is applied
+
+### 4. Commission Components
+
+- **Percentage Fee**: % of transaction amount (0-100%)
+- **Fixed Fee**: Flat amount added to percentage (e.g., 100 XOF)
+- **Minimum Fee**: Floor value (can't charge less)
+- **Maximum Fee**: Ceiling value (can't charge more)
+
+### 5. Rule Effectiveness
+
+Rules have time-based activation:
+- `effectiveFrom`: Start date/time (required)
+- `effectiveTo`: End date/time (optional, NULL = no expiry)
+- Rules are only applied if current time is within this range
+
+---
+
+## Validation Rules
+
+### Request Validation
+
+#### CalculateFeeRequest
+- `ruleId`: Required, must be valid UUID
+- `amount`: Required, must be > 0
+- `currency`: Required, must be XOF or XAF
+- `transferType`: Required, must be SAME_WALLET, CROSS_WALLET, or INTERNATIONAL
+- `kycLevel`: Optional, if provided must be LEVEL_1, LEVEL_2, LEVEL_3, or ANY
+
+#### CreateRuleRequest
+- `currency`: Required, must be XOF or XAF
+- `transferType`: Required
+- `percentage`: Required, must be 0 ≤ percentage ≤ 1.0
+- `fixedAmount`: Optional, must be ≥ 0 if provided
+- `minAmount`: Optional, must be ≥ 0 if provided
+- `maxAmount`: Optional, must be > minAmount if both provided
+- `minTransaction`: Optional, must be ≥ 0 if provided
+- `maxTransaction`: Optional, must be > minTransaction if both provided
+- `effectiveFrom`: Required
+- `effectiveTo`: Optional, must be > effectiveFrom if provided
+- `priority`: Optional, must be ≥ 0
+- `description`: Optional, max 500 characters
+
+### Business Validation
+
+#### Rule-Based Fee Calculation Validation (⭐ NEW)
+
+**Step 1: Rule Existence**
+- Rule with provided `ruleId` must exist
+- Error: "Commission rule not found: {ruleId}"
+
+**Step 2: Rule Active Status**
+- `rule.isActive` must be `true`
+- Error: "Commission rule is not active: {ruleId}"
+
+**Step 3: Rule Effective Date Range**
+- Current timestamp must be ≥ `rule.effectiveFrom`
+- Current timestamp must be < `rule.effectiveTo` (if effectiveTo is not NULL)
+- Error: "Commission rule is not effective for the current date: {ruleId}"
+
+**Step 4: Transaction Amount Range Validation** ⭐ NEW
+- **Minimum Amount Check**:
+  - If `rule.minAmount` is not NULL
+  - Transaction `amount` must be ≥ `rule.minAmount`
+  - Error: "Transaction amount is below the minimum allowed for this rule (Min: {minAmount} {currency})"
+
+- **Maximum Amount Check**:
+  - If `rule.maxAmount` is not NULL
+  - Transaction `amount` must be ≤ `rule.maxAmount`
+  - Error: "Transaction amount exceeds the maximum allowed for this rule (Max: {maxAmount} {currency})"
+
+**Step 5: Fee Calculation**
+- After validation passes, calculate fee using rule's formula
+- Apply percentage and fixed amounts
+- Apply min/max caps on the calculated fee (not on transaction amount)
+
+### Response Validation
+
+#### FeeCalculationResponse
+- `amount`: Required, must be > 0
+- `currency`: Required
+- `commissionAmount`: Required, must be ≥ 0
+- `transferType`: Required
+
+### Database Constraints
+
+#### commission_rules table
+- `percentage`: CHECK (percentage >= 0 AND percentage <= 1)
+- `fixed_amount`: DEFAULT 0
+- `min_amount`: DEFAULT 0, CHECK (min_amount >= 0)
+- `max_amount`: CHECK (max_amount IS NULL OR max_amount >= min_amount)
+- `min_transaction`: CHECK (min_transaction >= 0 OR min_transaction IS NULL)
+- `max_transaction`: CHECK (max_transaction >= min_transaction OR max_transaction IS NULL)
+- `is_active`: DEFAULT TRUE
+- `priority`: DEFAULT 0
+- UNIQUE(currency, transfer_type, priority, effective_from)
+
+#### commission_transactions table
+- `amount`: NOT NULL, CHECK (amount >= 0)
+- `status`: CHECK (status IN ('PENDING', 'COMPLETED', 'REFUNDED'))
+- `settled`: DEFAULT FALSE
+
+---
+
+## API Workflow
+
+### 1. Calculate Fee (Rule-Based)
+
+**Endpoint**: `POST /api/v1/commissions/calculate`
+
+**Flow**:
+```
+Client → Controller → CommissionService → FeeCalculationEngine
+                                              ↓
+                                    Get Rule by ruleId
+                                              ↓
+                                    Validate: Rule exists?
+                                              ↓
+                                    Validate: Rule active?
+                                              ↓
+                                    Validate: Rule effective?
+                                              ↓
+                                    Validate: Amount >= minAmount? ⭐
+                                              ↓
+                                    Validate: Amount <= maxAmount? ⭐
+                                              ↓
+                                    Calculate fee using rule
+                                              ↓
+                                    Build FeeCalculationResponse
+                                              ↓
+Client ← Controller ← CommissionService ← Return response
+```
+
+### 2. Get Rules by Currency
+
+**Endpoint**: `GET /api/v1/commissions/rules/currency/{currency}`
+
+**Flow**:
+```
+Client → Controller → CommissionRuleService → Repository
+                                                  ↓
+                                    Query rules by currency
+                                                  ↓
+                                    Map to response DTOs
+                                                  ↓
+Client ← Controller ← CommissionRuleService ← Return rules
+```
+
+### 3. Get Active Rules by Currency
+
+**Endpoint**: `GET /api/v1/commissions/rules/currency/{currency}/active`
+
+**Flow**:
+```
+Client → Controller → CommissionRuleService → Repository
+                                                  ↓
+                        Query active rules by currency (isActive=true)
+                                                  ↓
+                                Filter by effective date range
+                                                  ↓
+                                    Map to response DTOs
+                                                  ↓
+Client ← Controller ← CommissionRuleService ← Return active rules
+```
+
+### 4. Create Commission Rule
+
+**Endpoint**: `POST /api/v1/commissions/rules`
+
+**Flow**:
+```
+Admin → Controller → Validate request → CommissionRuleService
+                                              ↓
+                                    Validate business rules
+                                              ↓
+                                    Create rule entity
+                                              ↓
+                                    Save to database
+                                              ↓
+                                    Map to response DTO
+                                              ↓
+Admin ← Controller ← Return created rule (201 Created)
+```
+
+### 5. Record Commission (Internal)
+
+**Endpoint**: `POST /api/v1/commissions/record`
+
+**Flow**:
+```
+Transaction Service → Controller → CommissionService
+                                        ↓
+                            Create CommissionTransaction entity
+                                        ↓
+                            Save to database
+                                        ↓
+                            Publish COMMISSION_COLLECTED event
+                                        ↓
+Transaction Service ← Controller ← Return success
+```
+
+### 6. Get Revenue Report
+
+**Endpoint**: `GET /api/v1/commissions/revenue`
+
+**Flow**:
+```
+Admin → Controller → Validate date range → RevenueTrackingService
+                                                    ↓
+                                        Query commissions in range
+                                                    ↓
+                                        Calculate metrics
+                                                    ↓
+                                        Group by dimension
+                                                    ↓
+                                        Build report response
+                                                    ↓
+Admin ← Controller ← Return revenue report
 ```
 
 ---
 
-## Project Structure
+## Event Workflows
 
+### 1. Commission Collected Event
+
+**Trigger**: Commission recorded in database
+
+**Flow**:
 ```
-payment-commission-service/
-│
-├── src/
-│   ├── main/
-│   │   ├── java/
-│   │   │   └── com/
-│   │   │       └── payment/
-│   │   │           └── commission/
-│   │   │               ├── CommissionServiceApplication.java
-│   │   │               │
-│   │   │               ├── config/
-│   │   │               │   ├── SecurityConfig.java
-│   │   │               │   ├── KafkaConfig.java
-│   │   │               │   ├── RedisConfig.java
-│   │   │               │   ├── DatabaseConfig.java
-│   │   │               │   └── OpenApiConfig.java
-│   │   │               │
-│   │   │               ├── controller/
-│   │   │               │   ├── CommissionController.java
-│   │   │               │   ├── CommissionRuleController.java
-│   │   │               │   ├── RevenueReportController.java
-│   │   │               │   └── advice/
-│   │   │               │       └── GlobalExceptionHandler.java
-│   │   │               │
-│   │   │               ├── service/
-│   │   │               │   ├── CommissionService.java
-│   │   │               │   ├── CommissionServiceImpl.java
-│   │   │               │   ├── CommissionRuleService.java
-│   │   │               │   ├── CommissionRuleServiceImpl.java
-│   │   │               │   ├── FeeCalculationEngine.java
-│   │   │               │   ├── RevenueTrackingService.java
-│   │   │               │   ├── SettlementService.java
-│   │   │               │   └── CommissionEventPublisher.java
-│   │   │               │
-│   │   │               ├── repository/
-│   │   │               │   ├── CommissionRuleRepository.java
-│   │   │               │   └── CommissionTransactionRepository.java
-│   │   │               │
-│   │   │               ├── domain/
-│   │   │               │   ├── entity/
-│   │   │               │   │   ├── CommissionRule.java
-│   │   │               │   │   └── CommissionTransaction.java
-│   │   │               │   │
-│   │   │               │   └── enums/
-│   │   │               │       ├── TransferType.java
-│   │   │               │       ├── CommissionStatus.java
-│   │   │               │       └── SettlementStatus.java
-│   │   │               │
-│   │   │               ├── dto/
-│   │   │               │   ├── request/
-│   │   │               │   │   ├── CalculateFeeRequest.java
-│   │   │               │   │   ├── CreateRuleRequest.java
-│   │   │               │   │   ├── UpdateRuleRequest.java
-│   │   │               │   │   └── RevenueReportRequest.java
-│   │   │               │   │
-│   │   │               │   └── response/
-│   │   │               │       ├── FeeCalculationResponse.java
-│   │   │               │       ├── CommissionRuleResponse.java
-│   │   │               │       ├── RevenueReportResponse.java
-│   │   │               │       └── SettlementReportResponse.java
-│   │   │               │
-│   │   │               ├── event/
-│   │   │               │   ├── CommissionCollectedEvent.java
-│   │   │               │   ├── CommissionRefundedEvent.java
-│   │   │               │   └── CommissionSettledEvent.java
-│   │   │               │
-│   │   │               ├── listener/
-│   │   │               │   └── TransactionEventListener.java
-│   │   │               │
-│   │   │               ├── mapper/
-│   │   │               │   ├── CommissionRuleMapper.java
-│   │   │               │   └── CommissionTransactionMapper.java
-│   │   │               │
-│   │   │               ├── validation/
-│   │   │               │   ├── FeeRuleValidator.java
-│   │   │               │   └── AmountValidator.java
-│   │   │               │
-│   │   │               └── exception/
-│   │   │                   ├── RuleNotFoundException.java
-│   │   │                   ├── InvalidRuleException.java
-│   │   │                   └── NoMatchingRuleException.java
-│   │   │
-│   │   └── resources/
-│   │       ├── application.yml
-│   │       ├── application-dev.yml
-│   │       ├── application-prod.yml
-│   │       │
-│   │       ├── db/
-│   │       │   └── migration/
-│   │       │       ├── V1__create_commission_rules_table.sql
-│   │       │       ├── V2__create_commission_transactions_table.sql
-│   │       │       ├── V3__insert_default_bceao_rules.sql
-│   │       │       └── V4__add_indexes.sql
-│   │       │
-│   │       └── logback-spring.xml
-│   │
-│   └── test/
-│       ├── java/
-│       │   └── com/
-│       │       └── payment/
-│       │           └── commission/
-│       │               ├── controller/
-│       │               │   ├── CommissionControllerTest.java
-│       │               │   └── CommissionRuleControllerTest.java
-│       │               │
-│       │               ├── service/
-│       │               │   ├── CommissionServiceTest.java
-│       │               │   ├── FeeCalculationEngineTest.java
-│       │               │   └── RevenueTrackingServiceTest.java
-│       │               │
-│       │               ├── repository/
-│       │               │   └── CommissionRuleRepositoryTest.java
-│       │               │
-│       │               └── integration/
-│       │                   ├── FeeCalculationIntegrationTest.java
-│       │                   └── RuleManagementIntegrationTest.java
-│       │
-│       └── resources/
-│           ├── application-test.yml
-│           └── test-data.sql
-│
-├── build.gradle
-├── settings.gradle
-├── gradle.properties
-├── Dockerfile
-├── docker-compose.yml
-└── README.md
+CommissionService.recordCommission()
+        ↓
+Save commission to database
+        ↓
+CommissionEventPublisher.publishCommissionCollected()
+        ↓
+Create CommissionCollectedEvent
+        ↓
+Publish to Kafka topic: COMMISSION_EVENTS
+        ↓
+[Other services consume event]
 ```
 
----
+**Event Payload**:
+- `commissionId` (UUID)
+- `transactionId` (UUID)
+- `amount` (Long)
+- `currency` (String)
+- `calculationBasis` (JSON String)
+- `timestamp` (ISO 8601)
 
-## Database Schema
+### 2. Commission Refunded Event
 
-### Tables
+**Trigger**: Transaction reversed
 
-The Commission Service uses two main tables in the `commission_db` database:
-
-#### 1. commission_rules
-
-Stores commission calculation rules as a centralized wallet by currency and transfer type.
-
-```sql
-CREATE TABLE commission_rules (
-    rule_id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    currency            VARCHAR(3) NOT NULL,
-
-    -- Rule conditions
-    transfer_type       VARCHAR(20) NOT NULL CHECK (transfer_type IN ('SAME_WALLET', 'CROSS_WALLET', 'INTERNATIONAL')),
-    min_transaction     BIGINT,    -- Minimum transaction amount (NULL = no minimum)
-    max_transaction     BIGINT,    -- Maximum transaction amount (NULL = no maximum)
-    kyc_level           VARCHAR(20) CHECK (kyc_level IN ('LEVEL_1', 'LEVEL_2', 'LEVEL_3', 'ANY')),
-
-    -- Commission calculation
-    percentage          NUMERIC(5,4) NOT NULL CHECK (percentage >= 0 AND percentage <= 1), -- e.g., 0.0050 for 0.5%
-    fixed_amount        BIGINT DEFAULT 0,       -- Fixed fee in XOF (e.g., 100)
-    min_amount          BIGINT DEFAULT 0 CHECK (min_amount >= 0),  -- Min commission (e.g., 50 XOF)
-    max_amount          BIGINT CHECK (max_amount IS NULL OR max_amount >= min_amount), -- Max commission (e.g., 1000 XOF)
-
-    -- Rule management
-    is_active           BOOLEAN DEFAULT TRUE,
-    priority            INTEGER DEFAULT 0,      -- Higher priority evaluated first
-    effective_from      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    effective_to        TIMESTAMP WITH TIME ZONE, -- NULL = no expiry
-
-    -- Metadata
-    description         TEXT,
-    notes               TEXT,
-    created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    created_by          UUID,
-
-    -- Constraint: One active rule per currency per type per priority
-    UNIQUE(currency, transfer_type, priority, effective_from)
-);
-
--- Indexes
-CREATE INDEX idx_commission_rules_currency ON commission_rules(currency);
-CREATE INDEX idx_commission_rules_currency_active ON commission_rules(currency, is_active);
-CREATE INDEX idx_commission_rules_currency_type_active ON commission_rules(currency, transfer_type, is_active);
-CREATE INDEX idx_commission_rules_priority ON commission_rules(priority DESC);
-CREATE INDEX idx_commission_rules_effective ON commission_rules(effective_from, effective_to);
+**Flow**:
+```
+TransactionEventListener.onTransactionReversed()
+        ↓
+Find commission by transactionId
+        ↓
+Update status to REFUNDED
+        ↓
+Save to database
+        ↓
+CommissionEventPublisher.publishCommissionRefunded()
+        ↓
+Create CommissionRefundedEvent
+        ↓
+Publish to Kafka topic: COMMISSION_EVENTS
+        ↓
+[Other services consume event]
 ```
 
-#### 2. commission_transactions
+**Event Payload**:
+- `commissionId` (UUID)
+- `transactionId` (UUID)
+- `originalAmount` (Long)
+- `currency` (String)
+- `refundedAt` (ISO 8601)
 
-Tracks platform commission revenue per transaction.
+### 3. Transaction Completed Event (Consumed)
 
-```sql
-CREATE TABLE commission_transactions (
-    commission_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    transaction_id      UUID NOT NULL,
-    rule_id             UUID REFERENCES commission_rules(rule_id) ON DELETE SET NULL,
-    currency            VARCHAR(3) NOT NULL,
+**Trigger**: Transaction Service publishes TRANSACTION_COMPLETED
 
-    -- Commission details
-    amount              BIGINT NOT NULL CHECK (amount >= 0), -- Commission amount in XOF
-    calculation_basis   JSONB,  -- Store calculation details (percentage, fixed, min, max applied)
-
-    -- Accounting
-    status              VARCHAR(20) DEFAULT 'COMPLETED' CHECK (status IN ('PENDING', 'COMPLETED', 'REFUNDED')),
-    settled             BOOLEAN DEFAULT FALSE,
-    settlement_date     TIMESTAMP WITH TIME ZONE,
-
-    -- Audit
-    created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Indexes
-CREATE INDEX idx_commission_transactions_transaction ON commission_transactions(transaction_id);
-CREATE INDEX idx_commission_transactions_currency ON commission_transactions(currency);
-CREATE INDEX idx_commission_transactions_created_at ON commission_transactions(created_at DESC);
-CREATE INDEX idx_commission_transactions_settled ON commission_transactions(settled, settlement_date);
-CREATE INDEX idx_commission_transactions_revenue ON commission_transactions(currency, status, created_at) WHERE status = 'COMPLETED';
+**Flow**:
 ```
-
-### Database Functions
-
-#### calculate_transfer_fee(amount)
-
-BCEAO-compliant fee calculation function.
-
-```sql
-CREATE OR REPLACE FUNCTION calculate_transfer_fee(p_amount BIGINT)
-RETURNS BIGINT AS $$
-DECLARE
-    v_fixed_fee BIGINT := 100;      -- 100 XOF fixed fee
-    v_percentage NUMERIC := 0.005;  -- 0.5%
-    v_max_fee BIGINT := 1000;       -- Maximum 1,000 XOF
-    v_free_threshold BIGINT := 5000; -- FREE for amounts ≤ 5,000 XOF
-    v_total_fee BIGINT;
-BEGIN
-    -- Amounts ≤ 5,000 XOF are FREE (BCEAO financial inclusion)
-    IF p_amount <= v_free_threshold THEN
-        RETURN 0;
-    END IF;
-
-    -- Calculate fee: fixed + percentage
-    v_total_fee := v_fixed_fee + FLOOR(p_amount * v_percentage);
-
-    -- Cap at maximum
-    IF v_total_fee > v_max_fee THEN
-        RETURN v_max_fee;
-    END IF;
-
-    RETURN v_total_fee;
-END;
-$$ LANGUAGE plpgsql;
-
-COMMENT ON FUNCTION calculate_transfer_fee IS 'BCEAO-compliant fee calculation: FREE ≤5000 XOF, else 100 + 0.5% (max 1000)';
-```
-
----
-
-## Domain Model
-
-### Core Entities
-
-#### 1. CommissionRule.java
-
-```java
-package com.payment.commission.domain.entity;
-
-import com.payment.common.enums.Currency;
-import com.payment.common.enums.KYCLevel;
-import com.payment.commission.domain.enums.TransferType;
-import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.Type;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.UUID;
-
-@Entity
-@Table(name = "commission_rules")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class CommissionRule {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "rule_id")
-    private UUID ruleId;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "currency", nullable = false, length = 3)
-    private Currency currency;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "transfer_type", nullable = false, length = 20)
-    private TransferType transferType;
-
-    @Column(name = "min_transaction")
-    private Long minTransaction;
-
-    @Column(name = "max_transaction")
-    private Long maxTransaction;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "kyc_level", length = 20)
-    private KYCLevel kycLevel;
-
-    // Commission calculation parameters
-    @Column(name = "percentage", nullable = false, precision = 5, scale = 4)
-    private BigDecimal percentage; // e.g., 0.0050 for 0.5%
-
-    @Column(name = "fixed_amount")
-    private Long fixedAmount = 0L; // e.g., 100 XOF
-
-    @Column(name = "min_amount")
-    private Long minAmount = 0L;
-
-    @Column(name = "max_amount")
-    private Long maxAmount;
-
-    // Rule management
-    @Column(name = "is_active")
-    private Boolean isActive = true;
-
-    @Column(name = "priority")
-    private Integer priority = 0;
-
-    @Column(name = "effective_from", nullable = false)
-    private LocalDateTime effectiveFrom;
-
-    @Column(name = "effective_to")
-    private LocalDateTime effectiveTo;
-
-    // Metadata
-    @Column(name = "description", columnDefinition = "TEXT")
-    private String description;
-
-    @Column(name = "notes", columnDefinition = "TEXT")
-    private String notes;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-
-    @Column(name = "created_by")
-    private UUID createdBy;
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
-        if (effectiveFrom == null) {
-            effectiveFrom = LocalDateTime.now();
-        }
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
-    }
-
-    // Business methods
-    public boolean isEffective() {
-        LocalDateTime now = LocalDateTime.now();
-        return isActive &&
-               !now.isBefore(effectiveFrom) &&
-               (effectiveTo == null || now.isBefore(effectiveTo));
-    }
-
-    public boolean matches(Long amount, TransferType type, KYCLevel userKycLevel) {
-        if (!isEffective() || transferType != type) {
-            return false;
-        }
-
-        // Check amount range
-        if (minTransaction != null && amount < minTransaction) {
-            return false;
-        }
-        if (maxTransaction != null && amount > maxTransaction) {
-            return false;
-        }
-
-        // Check KYC level
-        if (kycLevel != null && kycLevel != KYCLevel.ANY && kycLevel != userKycLevel) {
-            return false;
-        }
-
-        return true;
-    }
-
-    public Long calculateFee(Long amount) {
-        // Calculate percentage fee
-        BigDecimal percentageFee = BigDecimal.valueOf(amount)
-                .multiply(percentage)
-                .setScale(0, java.math.RoundingMode.DOWN);
-
-        // Add fixed amount
-        long totalFee = percentageFee.longValue() + (fixedAmount != null ? fixedAmount : 0);
-
-        // Apply minimum
-        if (minAmount != null && totalFee < minAmount) {
-            totalFee = minAmount;
-        }
-
-        // Apply maximum
-        if (maxAmount != null && totalFee > maxAmount) {
-            totalFee = maxAmount;
-        }
-
-        return totalFee;
-    }
-}
-```
-
-#### 2. CommissionTransaction.java
-
-```java
-package com.payment.commission.domain.entity;
-
-import com.payment.common.enums.Currency;
-import com.payment.commission.domain.enums.CommissionStatus;
-import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.Type;
-
-import java.time.LocalDateTime;
-import java.util.UUID;
-
-@Entity
-@Table(name = "commission_transactions")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class CommissionTransaction {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "commission_id")
-    private UUID commissionId;
-
-    @Column(name = "transaction_id", nullable = false)
-    private UUID transactionId;
-
-    @Column(name = "rule_id")
-    private UUID ruleId;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "currency", nullable = false, length = 3)
-    private Currency currency;
-
-    @Column(name = "amount", nullable = false)
-    private Long amount; // Commission amount in XOF
-
-    @Type(io.hypersistence.utils.hibernate.type.json.JsonType.class)
-    @Column(name = "calculation_basis", columnDefinition = "jsonb")
-    private String calculationBasis;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", length = 20)
-    private CommissionStatus status = CommissionStatus.COMPLETED;
-
-    @Column(name = "settled")
-    private Boolean settled = false;
-
-    @Column(name = "settlement_date")
-    private LocalDateTime settlementDate;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-    }
-
-    // Business methods
-    public void markAsSettled() {
-        this.settled = true;
-        this.settlementDate = LocalDateTime.now();
-    }
-
-    public void markAsRefunded() {
-        this.status = CommissionStatus.REFUNDED;
-    }
-}
-```
-
-### Enums
-
-#### TransferType.java
-
-```java
-package com.payment.commission.domain.enums;
-
-public enum TransferType {
-    SAME_WALLET,      // Same provider (Orange → Orange)
-    CROSS_WALLET,     // Different providers (Orange → Wave)
-    INTERNATIONAL     // Cross-country transfer
-}
-```
-
-#### CommissionStatus.java
-
-```java
-package com.payment.commission.domain.enums;
-
-public enum CommissionStatus {
-    PENDING,      // Commission pending
-    COMPLETED,    // Commission collected
-    REFUNDED      // Commission refunded (transaction reversed)
-}
-```
-
----
-
-## API Specifications
-
-### Base URL
-
-```
-http://localhost:8086/api/v1/commissions
-```
-
-### Authentication
-
-All endpoints require JWT authentication.
-
-```http
-Authorization: Bearer <JWT_TOKEN>
-```
-
-### API Endpoints
-
-#### 1. Calculate Fee
-
-**POST** `/calculate`
-
-Calculate transaction fee based on active rules.
-
-**Request Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <JWT_TOKEN>
-```
-
-**Request Body:**
-```json
-{
-  "amount": 50000,
-  "currency": "XOF",
-  "transferType": "SAME_WALLET",
-  "kycLevel": "LEVEL_2"
-}
-```
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "data": {
-    "amount": 50000,
-    "currency": "XOF",
-    "commissionAmount": 350,
-    "calculationDetails": {
-      "ruleId": "770e8400-e29b-41d4-a716-446655440002",
-      "transferType": "SAME_WALLET",
-      "percentageFee": 0.005,
-      "percentageAmount": 250,
-      "fixedAmount": 100,
-      "minAmount": 50,
-      "maxAmount": 1000,
-      "totalBeforeCap": 350,
-      "finalAmount": 350
-    }
-  }
-}
-```
-
-**BCEAO Example (Amount ≤ 5,000 XOF):**
-```json
-{
-  "amount": 3000,
-  "currency": "XOF",
-  "transferType": "SAME_WALLET"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "amount": 3000,
-    "currency": "XOF",
-    "commissionAmount": 0,
-    "calculationDetails": {
-      "reason": "FREE_THRESHOLD",
-      "message": "Transactions ≤ 5,000 XOF are free (BCEAO financial inclusion)"
-    }
-  }
-}
-```
-
----
-
-#### 2. Get Commission Rules
-
-**GET** `/rules`
-
-Get all commission rules (paginated, filterable).
-
-**Query Parameters:**
-- `currency` (optional) - Filter by currency
-- `transferType` (optional) - Filter by transfer type
-- `isActive` (optional, default: true) - Filter by active status
-- `page` (default: 0)
-- `size` (default: 20)
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "data": {
-    "content": [
-      {
-        "ruleId": "770e8400-e29b-41d4-a716-446655440002",
-        "currency": "XOF",
-        "transferType": "SAME_WALLET",
-        "percentage": 0.005,
-        "fixedAmount": 100,
-        "minAmount": 50,
-        "maxAmount": 1000,
-        "isActive": true,
-        "priority": 10,
-        "effectiveFrom": "2025-01-01T00:00:00Z",
-        "effectiveTo": null,
-        "description": "Same wallet transfer: 0.5% + 100 XOF (max 1000)"
-      }
-    ],
-    "page": 0,
-    "size": 20,
-    "totalElements": 1,
-    "totalPages": 1
-  }
-}
-```
-
----
-
-#### 3. Create Commission Rule
-
-**POST** `/rules`
-
-Create a new commission rule (Admin only).
-
-**Request Body:**
-```json
-{
-  "currency": "XOF",
-  "transferType": "SAME_WALLET",
-  "minTransaction": null,
-  "maxTransaction": null,
-  "kycLevel": "ANY",
-  "percentage": 0.005,
-  "fixedAmount": 100,
-  "minAmount": 50,
-  "maxAmount": 1000,
-  "priority": 10,
-  "effectiveFrom": "2025-01-01T00:00:00Z",
-  "effectiveTo": null,
-  "description": "Standard BCEAO fee: 0.5% + 100 XOF, max 1000 XOF"
-}
-```
-
-**Response (201 Created):**
-```json
-{
-  "success": true,
-  "message": "Règle de commission créée avec succès",
-  "data": {
-    "ruleId": "770e8400-e29b-41d4-a716-446655440002",
-    "currency": "XOF",
-    "transferType": "SAME_WALLET",
-    "percentage": 0.005,
-    "fixedAmount": 100,
-    "minAmount": 50,
-    "maxAmount": 1000,
-    "isActive": true,
-    "createdAt": "2025-10-20T10:00:00Z"
-  }
-}
-```
-
----
-
-#### 4. Update Commission Rule
-
-**PUT** `/rules/{ruleId}`
-
-Update an existing commission rule (Admin only).
-
-**Request Body:**
-```json
-{
-  "percentage": 0.0075,
-  "fixedAmount": 150,
-  "maxAmount": 1500,
-  "description": "Updated fee structure",
-  "isActive": true
-}
-```
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "message": "Règle de commission mise à jour avec succès",
-  "data": {
-    "ruleId": "770e8400-e29b-41d4-a716-446655440002",
-    "percentage": 0.0075,
-    "fixedAmount": 150,
-    "maxAmount": 1500,
-    "updatedAt": "2025-10-20T11:00:00Z"
-  }
-}
-```
-
----
-
-#### 5. Deactivate Commission Rule
-
-**DELETE** `/rules/{ruleId}`
-
-Deactivate a commission rule (soft delete).
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "message": "Règle de commission désactivée avec succès"
-}
-```
-
----
-
-#### 6. Get Revenue Report
-
-**GET** `/revenue`
-
-Get revenue report by provider, period, currency.
-
-**Query Parameters:**
-- `currency` (optional)
-- `startDate` (required) - ISO 8601 date
-- `endDate` (required) - ISO 8601 date
-- `groupBy` (optional: CURRENCY, DAY, MONTH) - default: CURRENCY
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "data": {
-    "reportPeriod": {
-      "startDate": "2025-10-01",
-      "endDate": "2025-10-31"
-    },
-    "totalRevenue": 2500000,
-    "currency": "XOF",
-    "transactionCount": 1500,
-    "averageCommission": 1666,
-    "settledAmount": 2000000,
-    "unsettledAmount": 500000,
-    "breakdown": [
-      {
-        "currency": "XOF",
-        "revenue": 2500000,
-        "transactionCount": 1500,
-        "averageCommission": 1666,
-        "settled": 2000000,
-        "unsettled": 500000
-      }
-    ]
-  }
-}
-```
-
----
-
-#### 7. Record Commission (Internal)
-
-**POST** `/record`
-
-Record commission for a completed transaction (called internally by Transaction Service or via event).
-
-**Request Body:**
-```json
-{
-  "transactionId": "880e8400-e29b-41d4-a716-446655440003",
-  "ruleId": "770e8400-e29b-41d4-a716-446655440002",
-  "amount": 350,
-  "currency": "XOF",
-  "calculationBasis": {
-    "percentageFee": 0.005,
-    "percentageAmount": 250,
-    "fixedAmount": 100,
-    "finalAmount": 350
-  }
-}
-```
-
-**Response (201 Created):**
-```json
-{
-  "success": true,
-  "message": "Commission enregistrée avec succès",
-  "data": {
-    "commissionId": "990e8400-e29b-41d4-a716-446655440004",
-    "transactionId": "880e8400-e29b-41d4-a716-446655440003",
-    "amount": 350,
-    "status": "COMPLETED",
-    "createdAt": "2025-10-20T10:30:00Z"
-  }
-}
-```
-
----
-
-## Service Layer
-
-### Core Services
-
-#### 1. CommissionService
-
-Main service interface.
-
-```java
-package com.payment.commission.service;
-
-import com.payment.commission.dto.request.*;
-import com.payment.commission.dto.response.*;
-import com.payment.commission.domain.enums.TransferType;
-import com.payment.common.enums.Currency;
-import com.payment.common.enums.KYCLevel;
-
-import java.util.UUID;
-
-public interface CommissionService {
-
-    // Fee calculation
-    FeeCalculationResponse calculateFee(CalculateFeeRequest request);
-    Long calculateFee(Long amount, Currency currency, TransferType transferType, KYCLevel kycLevel);
-
-    // Commission recording
-    void recordCommission(UUID transactionId, UUID ruleId, Long amount, Currency currency, String calculationBasis);
-
-    // BCEAO-compliant fee calculation
-    Long calculateBCEAOFee(Long amount);
-}
-```
-
-#### 2. FeeCalculationEngine
-
-Core fee calculation logic.
-
-```java
-package com.payment.commission.service;
-
-import com.payment.commission.domain.entity.CommissionRule;
-import com.payment.commission.domain.enums.TransferType;
-import com.payment.commission.repository.CommissionRuleRepository;
-import com.payment.commission.exception.NoMatchingRuleException;
-import com.payment.common.enums.Currency;
-import com.payment.common.enums.KYCLevel;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.UUID;
-
-@Service
-@RequiredArgsConstructor
-@Slf4j
-@Transactional(readOnly = true)
-public class FeeCalculationEngine {
-
-    private final CommissionRuleRepository commissionRuleRepository;
-
-    private static final Long BCEAO_FREE_THRESHOLD = 5000L; // XOF
-    private static final Long BCEAO_FIXED_FEE = 100L;       // XOF
-    private static final Double BCEAO_PERCENTAGE = 0.005;   // 0.5%
-    private static final Long BCEAO_MAX_FEE = 1000L;        // XOF
-
-    /**
-     * Calculate fee using BCEAO rules
-     */
-    public Long calculateBCEAOFee(Long amount) {
-        // Financial inclusion: FREE for amounts ≤ 5,000 XOF
-        if (amount <= BCEAO_FREE_THRESHOLD) {
-            log.info("Amount {} XOF ≤ {} XOF: FREE (BCEAO financial inclusion)", amount, BCEAO_FREE_THRESHOLD);
-            return 0L;
-        }
-
-        // Calculate: 100 XOF + 0.5% of amount
-        Long percentageFee = Math.round(amount * BCEAO_PERCENTAGE);
-        Long totalFee = BCEAO_FIXED_FEE + percentageFee;
-
-        // Cap at 1,000 XOF
-        Long finalFee = Math.min(totalFee, BCEAO_MAX_FEE);
-
-        log.info("BCEAO fee for {} XOF: {} (fixed: {}, percentage: {}, capped at: {})",
-                 amount, finalFee, BCEAO_FIXED_FEE, percentageFee, BCEAO_MAX_FEE);
-
-        return finalFee;
-    }
-
-    /**
-     * Calculate fee using custom commission rules
-     */
-    @Cacheable(value = "commission-calculation", key = "#amount + '-' + #currency + '-' + #transferType")
-    public Long calculateFee(Long amount, Currency currency, TransferType transferType, KYCLevel kycLevel) {
-        log.info("Calculating fee: amount={}, currency={}, type={}, kycLevel={}",
-                 amount, currency, transferType, kycLevel);
-
-        // Get active rules for this currency and transfer type, ordered by priority
-        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByCurrencyAndType(
-            currency, transferType
-        );
-
-        if (rules.isEmpty()) {
-            log.warn("No commission rules found for currency {} and transfer type {}, using BCEAO default",
-                     currency, transferType);
-            return calculateBCEAOFee(amount);
-        }
-
-        // Find first matching rule
-        CommissionRule matchingRule = rules.stream()
-                .filter(rule -> rule.matches(amount, transferType, kycLevel))
-                .findFirst()
-                .orElseThrow(() -> new NoMatchingRuleException(
-                    "Aucune règle de commission ne correspond aux critères"
-                ));
-
-        Long fee = matchingRule.calculateFee(amount);
-        log.info("Fee calculated using rule {}: {} XOF", matchingRule.getRuleId(), fee);
-
-        return fee;
-    }
-
-    /**
-     * Get matching rule for transaction
-     */
-    public CommissionRule findMatchingRule(Long amount, Currency currency,
-                                          TransferType transferType, KYCLevel kycLevel) {
-        List<CommissionRule> rules = commissionRuleRepository.findActiveRulesByCurrencyAndType(
-            currency, transferType
-        );
-
-        return rules.stream()
-                .filter(rule -> rule.matches(amount, transferType, kycLevel))
-                .findFirst()
-                .orElse(null);
-    }
-}
-```
-
-#### 3. CommissionServiceImpl
-
-```java
-package com.payment.commission.service;
-
-import com.payment.commission.domain.entity.CommissionRule;
-import com.payment.commission.domain.entity.CommissionTransaction;
-import com.payment.commission.domain.enums.CommissionStatus;
-import com.payment.commission.domain.enums.TransferType;
-import com.payment.commission.dto.request.CalculateFeeRequest;
-import com.payment.commission.dto.response.FeeCalculationResponse;
-import com.payment.commission.repository.CommissionTransactionRepository;
-import com.payment.common.enums.Currency;
-import com.payment.common.enums.KYCLevel;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.UUID;
-
-@Service
-@RequiredArgsConstructor
-@Slf4j
-@Transactional
-public class CommissionServiceImpl implements CommissionService {
-
-    private final FeeCalculationEngine feeCalculationEngine;
-    private final CommissionTransactionRepository commissionTransactionRepository;
-    private final CommissionEventPublisher eventPublisher;
-
-    @Override
-    @Transactional(readOnly = true)
-    public FeeCalculationResponse calculateFee(CalculateFeeRequest request) {
-        log.info("Calculating fee for request: {}", request);
-
-        Long feeAmount = feeCalculationEngine.calculateFee(
-            request.getAmount(),
-            request.getCurrency(),
-            request.getTransferType(),
-            request.getKycLevel()
-        );
-
-        CommissionRule matchingRule = feeCalculationEngine.findMatchingRule(
-            request.getAmount(),
-            request.getCurrency(),
-            request.getTransferType(),
-            request.getKycLevel()
-        );
-
-        return FeeCalculationResponse.builder()
-                .amount(request.getAmount())
-                .currency(request.getCurrency())
-                .commissionAmount(feeAmount)
-                .ruleId(matchingRule != null ? matchingRule.getRuleId() : null)
-                .transferType(request.getTransferType())
-                .build();
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Long calculateFee(Long amount, Currency currency,
-                            TransferType transferType, KYCLevel kycLevel) {
-        return feeCalculationEngine.calculateFee(amount, currency, transferType, kycLevel);
-    }
-
-    @Override
-    public void recordCommission(UUID transactionId, UUID ruleId,
-                                Long amount, Currency currency, String calculationBasis) {
-        log.info("Recording commission: transaction={}, amount={} {}", transactionId, amount, currency);
-
-        CommissionTransaction commission = CommissionTransaction.builder()
-                .transactionId(transactionId)
-                .ruleId(ruleId)
-                .amount(amount)
-                .currency(currency)
-                .calculationBasis(calculationBasis)
-                .status(CommissionStatus.COMPLETED)
-                .settled(false)
-                .build();
-
-        commissionTransactionRepository.save(commission);
-
-        // Publish event
-        eventPublisher.publishCommissionCollected(commission);
-
-        log.info("Commission recorded successfully: {}", commission.getCommissionId());
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Long calculateBCEAOFee(Long amount) {
-        return feeCalculationEngine.calculateBCEAOFee(amount);
-    }
-}
-```
-
----
-
-## Event Publishing
-
-### Commission Events
-
-#### 1. CommissionCollectedEvent
-
-```java
-package com.payment.commission.event;
-
-import com.payment.kafka.event.BaseEvent;
-import lombok.*;
-
-import java.util.UUID;
-
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class CommissionCollectedEvent extends BaseEvent {
-    private UUID commissionId;
-    private UUID transactionId;
-    private Long amount;
-    private String currency;
-    private String calculationBasis;
-}
-```
-
-#### 2. CommissionEventPublisher
-
-```java
-package com.payment.commission.service;
-
-import com.payment.kafka.KafkaTopics;
-import com.payment.kafka.publisher.EventPublisher;
-import com.payment.commission.domain.entity.CommissionTransaction;
-import com.payment.commission.event.*;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
-@Service
-@RequiredArgsConstructor
-@Slf4j
-public class CommissionEventPublisher {
-
-    private final EventPublisher eventPublisher;
-
-    public void publishCommissionCollected(CommissionTransaction commission) {
-        CommissionCollectedEvent event = CommissionCollectedEvent.builder()
-                .commissionId(commission.getCommissionId())
-                .transactionId(commission.getTransactionId())
-                .amount(commission.getAmount())
-                .currency(commission.getCurrency().name())
-                .calculationBasis(commission.getCalculationBasis())
-                .build();
-
-        eventPublisher.publish(KafkaTopics.COMMISSION_EVENTS, event);
-        log.info("Published COMMISSION_COLLECTED event for commission: {}", commission.getCommissionId());
-    }
-}
-```
-
----
-
-## Configuration
-
-### application.yml
-
-```yaml
-spring:
-  application:
-    name: payment-commission-service
-
-  datasource:
-    url: jdbc:postgresql://localhost:5432/commission_db
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
-    driver-class-name: org.postgresql.Driver
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
-
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    show-sql: false
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
-    baseline-on-migrate: true
-
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      timeout: 2000ms
-
-server:
-  port: 8086
-
-# BCEAO Fee Configuration
-commission:
-  bceao:
-    free-threshold: 5000       # XOF
-    fixed-fee: 100             # XOF
-    percentage-fee: 0.005      # 0.5%
-    max-fee: 1000              # XOF
-
-# Caching
-cache:
-  commission-rules:
-    ttl-seconds: 3600  # 1 hour
-
-# Logging
-logging:
-  level:
-    com.payment.commission: DEBUG
-    org.hibernate.SQL: DEBUG
-```
-
----
-
-## Testing Strategy
-
-### Unit Tests
-
-#### FeeCalculationEngineTest.java
-
-```java
-@ExtendWith(MockitoExtension.class)
-class FeeCalculationEngineTest {
-
-    @Mock
-    private CommissionRuleRepository commissionRuleRepository;
-
-    @InjectMocks
-    private FeeCalculationEngine feeCalculationEngine;
-
-    @Test
-    void testCalculateBCEAOFee_FreeThreshold() {
-        // Amount ≤ 5,000 XOF should be FREE
-        Long fee = feeCalculationEngine.calculateBCEAOFee(3000L);
-        assertThat(fee).isEqualTo(0L);
-    }
-
-    @Test
-    void testCalculateBCEAOFee_StandardFee() {
-        // Amount: 50,000 XOF
-        // Expected: 100 + (50000 × 0.005) = 100 + 250 = 350 XOF
-        Long fee = feeCalculationEngine.calculateBCEAOFee(50000L);
-        assertThat(fee).isEqualTo(350L);
-    }
-
-    @Test
-    void testCalculateBCEAOFee_MaxCap() {
-        // Amount: 500,000 XOF
-        // Calculated: 100 + (500000 × 0.005) = 100 + 2500 = 2600 XOF
-        // Expected: 1000 XOF (capped)
-        Long fee = feeCalculationEngine.calculateBCEAOFee(500000L);
-        assertThat(fee).isEqualTo(1000L);
-    }
-}
+Kafka Consumer receives TRANSACTION_COMPLETED event
+        ↓
+TransactionEventListener.onTransactionCompleted()
+        ↓
+Extract transaction details (ID, amount, currency, ruleId)
+        ↓
+CommissionService.recordCommission()
+        ↓
+Save commission record
+        ↓
+Publish COMMISSION_COLLECTED event
 ```
 
 ---
@@ -1446,33 +675,83 @@ class FeeCalculationEngineTest {
 ### Phase 1: Setup (Week 1)
 - [ ] Create Git repository
 - [ ] Initialize Gradle project with Spring Boot 3.2.0
-- [ ] Add dependencies
-- [ ] Configure application.yml
+- [ ] Add dependencies (Spring Data JPA, PostgreSQL, Flyway, Kafka, Redis)
+- [ ] Configure application.yml (database, Kafka, Redis)
 - [ ] Create database: `commission_db`
+- [ ] Set up Docker Compose for local development
 
 ### Phase 2: Database & Domain (Week 1)
-- [ ] Create Flyway migrations
-- [ ] Implement domain entities
-- [ ] Create repositories
-- [ ] Test BCEAO fee calculation function
+- [ ] Create Flyway migration V1: commission_rules table
+- [ ] Create Flyway migration V2: commission_transactions table
+- [ ] Create Flyway migration V3: insert default BCEAO rules
+- [ ] Create Flyway migration V4: add indexes
+- [ ] Implement CommissionRule entity with business methods
+- [ ] Implement CommissionTransaction entity
+- [ ] Create enums: TransferType, CommissionStatus
+- [ ] Create repositories with custom queries
 
 ### Phase 3: Core Services (Week 2)
 - [ ] Implement FeeCalculationEngine
+  - [ ] calculateBCEAOFee() method
+  - [ ] calculateFeeByRuleId() method with all validations ⭐
+  - [ ] getRuleById() method
 - [ ] Implement CommissionService
+  - [ ] calculateFee() method (rule-based)
+  - [ ] recordCommission() method
+  - [ ] refundCommission() method
 - [ ] Implement CommissionRuleService
+  - [ ] createRule() method
+  - [ ] updateRule() method
+  - [ ] deactivateRule() method
+  - [ ] getRulesByCurrency() method
+  - [ ] getActiveRulesByCurrency() method
 - [ ] Write unit tests (>80% coverage)
 
 ### Phase 4: API Layer (Week 3)
-- [ ] Implement controllers
-- [ ] Add Swagger documentation
-- [ ] Test all endpoints
-- [ ] Add request validation
+- [ ] Implement CommissionController
+  - [ ] POST /calculate endpoint
+  - [ ] POST /record endpoint
+- [ ] Implement CommissionRuleController
+  - [ ] GET /rules endpoint
+  - [ ] GET /rules/currency/{currency} endpoint
+  - [ ] GET /rules/currency/{currency}/active endpoint
+  - [ ] POST /rules endpoint
+  - [ ] PUT /rules/{ruleId} endpoint
+  - [ ] DELETE /rules/{ruleId} endpoint
+- [ ] Implement RevenueReportController
+  - [ ] GET /revenue endpoint
+- [ ] Add GlobalExceptionHandler
+- [ ] Add Swagger/OpenAPI documentation
+- [ ] Add request/response validation
+- [ ] Test all endpoints with Postman
 
-### Phase 5: Events & Testing (Week 4)
-- [ ] Implement event publishing
-- [ ] Write integration tests
+### Phase 5: Events & Messaging (Week 3)
+- [ ] Implement CommissionEventPublisher
+  - [ ] publishCommissionCollected()
+  - [ ] publishCommissionRefunded()
+- [ ] Implement TransactionEventListener
+  - [ ] onTransactionCompleted()
+  - [ ] onTransactionReversed()
+- [ ] Configure Kafka topics
+- [ ] Test event publishing and consumption
+
+### Phase 6: Validation & Security (Week 4)
+- [ ] Add Jakarta Bean Validation annotations
+- [ ] Implement custom validators
+- [ ] Add i18n support (French & English messages) ✅
+- [ ] Configure Spring Security
+- [ ] Add JWT authentication
+- [ ] Add role-based access control (Admin vs User)
+
+### Phase 7: Testing & Deployment (Week 4)
+- [ ] Write integration tests with Testcontainers
+- [ ] Write API tests with REST Assured
 - [ ] Performance testing
-- [ ] Deploy to staging
+- [ ] Load testing (fee calculation under high load)
+- [ ] Create Dockerfile
+- [ ] Deploy to staging environment
+- [ ] Smoke tests in staging
+- [ ] Deploy to production
 
 ---
 
@@ -1480,10 +759,12 @@ class FeeCalculationEngineTest {
 
 This implementation guide provides:
 
-- ✅ **Complete BCEAO fee calculation** - FREE ≤5,000 XOF, 100 + 0.5% (max 1,000 XOF)
-- ✅ **Flexible rule engine** - Support multiple commission rules per provider
+- ✅ **Rule-based fee calculation** - Explicit ruleId-based calculation with validations
+- ✅ **Amount range validation** - Validate transaction amount against rule min/max ⭐
+- ✅ **Flexible rule engine** - Support multiple commission rules per currency/type
 - ✅ **Revenue tracking** - Track all platform commissions
-- ✅ **7 API endpoints** - Calculate, manage rules, track revenue
+- ✅ **7 API endpoints** - Calculate fees, manage rules, track revenue
+- ✅ **BCEAO compliance** - FREE ≤5,000 XOF, 100 + 0.5% (max 1,000 XOF) as fallback
 - ✅ **4-week implementation plan** - Detailed checklist
 
 **Implementation Time**: **4 weeks**
@@ -1491,19 +772,31 @@ This implementation guide provides:
 
 ---
 
-**Document Version**: 1.1.0
-**Last Updated**: 2025-10-20
+**Document Version**: 2.0.0
+**Last Updated**: 2025-10-21
 **Maintained By**: Technical Architecture Team
 
 ## Changelog
 
+### Version 2.0.0 (2025-10-21)
+- **MAJOR CHANGE**: Converted guide to workflow-focused format
+- Removed all code snippets and examples
+- Added comprehensive validation rules section
+- Added transaction amount range validation (minAmount/maxAmount) ⭐
+- Enhanced fee calculation workflow with step-by-step validation
+- Added detailed API workflow diagrams
+- Added event workflow documentation
+- Restructured for better focus on business processes
+- Added rule-based fee calculation workflow
+- Mandatory ruleId in fee calculation requests
+
 ### Version 1.1.0 (2025-10-20)
 - Removed `providerId` from commission rules - rules now function as a centralized wallet
-- Updated database schema to remove `provider_id` column from both `commission_rules` and `commission_transactions` tables
+- Updated database schema to remove `provider_id` column from both tables
 - Modified unique constraints and indexes to reflect wallet-based architecture
 - Updated all API endpoints and DTOs to remove provider-specific filtering
 - Changed revenue reporting to group by currency instead of provider
 - Simplified commission rule management to be currency and transfer-type based
 
 ### Version 1.0.0 (2025-10-19)
-- Initial implementation guide
+- Initial implementation guide with complete code examples

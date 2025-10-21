@@ -2,7 +2,7 @@ package com.payment.commission.service;
 
 import com.payment.commission.dto.request.CreateRuleRequest;
 import com.payment.commission.dto.request.UpdateRuleRequest;
-import com.payment.commission.dto.response.CommissionRuleResponse;
+import com.payment.common.dto.commission.response.CommissionRuleResponse;
 import com.payment.common.enums.Currency;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

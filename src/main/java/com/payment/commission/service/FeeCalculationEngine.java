@@ -4,7 +4,7 @@ import com.payment.commission.domain.entity.CommissionRule;
 import com.payment.commission.exception.RuleNotFoundException;
 import com.payment.common.enums.Currency;
 import com.payment.common.enums.KYCLevel;
-import com.payment.commission.domain.enums.TransferType;
+import com.payment.common.enums.TransferType;
 import com.payment.commission.exception.NoMatchingRuleException;
 import com.payment.commission.repository.CommissionRuleRepository;
 import lombok.RequiredArgsConstructor;

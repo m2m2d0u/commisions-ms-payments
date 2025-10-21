@@ -2,7 +2,7 @@ package com.payment.commission.repository;
 
 import com.payment.commission.domain.entity.CommissionRule;
 import com.payment.common.enums.Currency;
-import com.payment.commission.domain.enums.TransferType;
+import com.payment.common.enums.TransferType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

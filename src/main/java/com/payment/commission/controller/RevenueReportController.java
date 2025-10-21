@@ -1,7 +1,7 @@
 package com.payment.commission.controller;
 
 import com.payment.common.i18n.MessageService;
-import com.payment.common.dto.ApiResponse;
+import com.payment.common.dto.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;

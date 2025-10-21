@@ -2,11 +2,11 @@ package com.payment.commission.controller;
 
 import com.payment.commission.dto.request.CreateRuleRequest;
 import com.payment.commission.dto.request.UpdateRuleRequest;
-import com.payment.commission.dto.response.CommissionRuleResponse;
 import com.payment.commission.service.CommissionRuleService;
+import com.payment.common.dto.commission.response.CommissionRuleResponse;
 import com.payment.common.enums.Currency;
 import com.payment.common.i18n.MessageService;
-import com.payment.common.dto.ApiResponse;
+import com.payment.common.dto.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
